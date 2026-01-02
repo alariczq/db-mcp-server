@@ -57,8 +57,10 @@ impl std::fmt::Display for DatabaseType {
     }
 }
 
+/// Configuration for a database connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
+    /// Connection identifier.
     pub id: String,
     pub db_type: DatabaseType,
     /// Contains sensitive data - never log
@@ -67,10 +69,11 @@ pub struct ConnectionConfig {
     /// Default: false for safety
     #[serde(default)]
     pub writable: bool,
-    pub name: Option<String>,
     /// True if connection is at server level (no specific database in URL)
     #[serde(default)]
     pub server_level: bool,
+    /// Database name extracted from connection URL. None for server-level connections.
+    pub database: Option<String>,
 }
 
 impl ConnectionConfig {
@@ -79,8 +82,8 @@ impl ConnectionConfig {
         id: impl Into<String>,
         connection_string: impl Into<String>,
         writable: bool,
-        name: Option<String>,
         server_level: bool,
+        database: Option<String>,
     ) -> Result<Self, ConnectionConfigError> {
         let id = id.into();
         let connection_string = connection_string.into();
@@ -105,8 +108,8 @@ impl ConnectionConfig {
             db_type,
             connection_string,
             writable,
-            name,
             server_level,
+            database,
         })
     }
 
@@ -140,15 +143,18 @@ pub enum ConnectionConfigError {
     UnknownDatabaseType(String),
 }
 
+/// Information about an active connection, returned after successful connection.
 #[derive(Debug, Clone, Serialize)]
 pub struct ConnectionInfo {
+    /// Connection identifier.
     pub connection_id: String,
     pub database_type: DatabaseType,
     pub server_version: Option<String>,
     pub writable: bool,
-    pub name: Option<String>,
     /// True if connection is at server level (no specific database in URL)
     pub server_level: bool,
+    /// Database name extracted from connection URL. None for server-level connections.
+    pub database: Option<String>,
 }
 
 /// Transaction state for active transactions.
@@ -237,16 +243,16 @@ mod tests {
             "test-conn",
             "postgres://user:pass@localhost:5432/db",
             true,
-            Some("Test DB".to_string()),
             false,
+            Some("db".to_string()),
         )
         .unwrap();
 
         assert_eq!(config.id, "test-conn");
         assert_eq!(config.db_type, DatabaseType::PostgreSQL);
         assert!(config.writable);
-        assert_eq!(config.name, Some("Test DB".to_string()));
         assert!(!config.server_level);
+        assert_eq!(config.database, Some("db".to_string()));
     }
 
     #[test]
@@ -255,8 +261,8 @@ mod tests {
             "test",
             "postgres://user:secret@localhost:5432/db",
             true,
-            None,
             false,
+            Some("db".to_string()),
         )
         .unwrap();
 
@@ -267,14 +273,14 @@ mod tests {
 
     #[test]
     fn test_connection_config_empty_id() {
-        let result = ConnectionConfig::new("", "postgres://localhost/db", true, None, false);
+        let result = ConnectionConfig::new("", "postgres://localhost/db", true, false, None);
         assert!(matches!(result, Err(ConnectionConfigError::EmptyId)));
     }
 
     #[test]
     fn test_connection_config_invalid_id() {
         let result =
-            ConnectionConfig::new("test conn", "postgres://localhost/db", true, None, false);
+            ConnectionConfig::new("test conn", "postgres://localhost/db", true, false, None);
         assert!(matches!(result, Err(ConnectionConfigError::InvalidId(_))));
     }
 

@@ -44,14 +44,19 @@ impl std::fmt::Display for TransportMode {
     }
 }
 
+/// Database connection configuration parsed from CLI arguments.
 #[derive(Debug, Clone)]
 pub struct DatabaseConfig {
+    /// Connection identifier. From "id=url" format, or derived from database name, or "default".
     pub id: String,
+    /// Full connection URL (sensitive - not logged).
     pub connection_string: String,
     /// Default: false for safety
     pub writable: bool,
     /// True if connection is at server level (no specific database in URL)
     pub server_level: bool,
+    /// Database name extracted from URL path. None for server-level connections.
+    pub database: Option<String>,
 }
 
 impl DatabaseConfig {
@@ -72,9 +77,9 @@ impl DatabaseConfig {
     /// mydb=postgres://user:pass@host/db?writable=true     # named, writable
     /// ```
     pub fn parse(s: &str) -> Result<Self, String> {
-        // Split id=url format (only if '=' before '://')
+        // Split name=url format (only if '=' before '://')
         let scheme_pos = s.find("://").unwrap_or(s.len());
-        let (explicit_id, url_str) = match s[..scheme_pos].find('=') {
+        let (explicit_name, url_str) = match s[..scheme_pos].find('=') {
             Some(idx) => (Some(&s[..idx]), &s[idx + 1..]),
             None => (None, s),
         };
@@ -86,9 +91,9 @@ impl DatabaseConfig {
             .remove("writable")
             .is_some_and(|v| v.eq_ignore_ascii_case("true"));
 
-        // Detect server-level connection (no database in URL path)
-        let db_name = Self::db_name(&url);
-        let server_level = db_name.is_none();
+        // Extract database name from URL path
+        let database = Self::db_name(&url);
+        let server_level = database.is_none();
 
         // Check if SQLite is being used without a file path
         let scheme = url.scheme().to_lowercase();
@@ -98,16 +103,18 @@ impl DatabaseConfig {
             );
         }
 
-        let id = explicit_id
+        // ID priority: explicit name > database name > "default"
+        let id = explicit_name
             .map(String::from)
-            .or(db_name)
-            .unwrap_or_else(|| "default".into());
+            .or_else(|| database.clone())
+            .unwrap_or_else(|| "default".to_string());
 
         Ok(Self {
             id,
             connection_string: url.to_string(),
             writable,
             server_level,
+            database,
         })
     }
 
@@ -417,6 +424,7 @@ mod tests {
         let config = DatabaseConfig::parse("mysql://user:pass@host:3306").unwrap();
         assert!(config.server_level);
         assert_eq!(config.id, "default");
+        assert!(config.database.is_none());
     }
 
     #[test]
@@ -445,7 +453,9 @@ mod tests {
     fn test_parse_url_with_database_sets_server_level_false() {
         let config = DatabaseConfig::parse("mysql://user:pass@host:3306/mydb").unwrap();
         assert!(!config.server_level);
+        // ID is derived from database name
         assert_eq!(config.id, "mydb");
+        assert_eq!(config.database, Some("mydb".to_string()));
     }
 
     #[test]
@@ -463,12 +473,103 @@ mod tests {
     fn test_parse_sqlite_url_with_path_sets_server_level_false() {
         let config = DatabaseConfig::parse("sqlite://path/to/db.sqlite").unwrap();
         assert!(!config.server_level);
+        // ID is derived from database name (without extension)
+        assert_eq!(config.id, "db");
+    }
+
+    #[test]
+    fn test_parse_named_connection() {
+        let config = DatabaseConfig::parse("myserver=mysql://user:pass@host:3306/db").unwrap();
+        assert!(!config.server_level);
+        // ID is explicit name
+        assert_eq!(config.id, "myserver");
+        assert_eq!(config.database, Some("db".to_string()));
     }
 
     #[test]
     fn test_parse_named_server_level_connection() {
         let config = DatabaseConfig::parse("myserver=mysql://user:pass@host:3306").unwrap();
         assert!(config.server_level);
+        // ID is explicit name
         assert_eq!(config.id, "myserver");
+        assert!(config.database.is_none());
+    }
+
+    // =========================================================================
+    // Connection ID tests
+    // =========================================================================
+
+    #[test]
+    fn test_connection_id_from_explicit_name() {
+        let config = DatabaseConfig::parse("myname=mysql://host/db").unwrap();
+        assert_eq!(config.id, "myname");
+    }
+
+    #[test]
+    fn test_connection_id_from_database_name() {
+        let config = DatabaseConfig::parse("mysql://host/mydb").unwrap();
+        assert_eq!(config.id, "mydb");
+    }
+
+    #[test]
+    fn test_connection_id_default_when_no_database() {
+        let config = DatabaseConfig::parse("mysql://host:3306").unwrap();
+        assert_eq!(config.id, "default");
+    }
+
+    // =========================================================================
+    // User Story 2: Database Field Extraction
+    // =========================================================================
+
+    #[test]
+    fn test_database_extraction_mysql() {
+        // T018: Test MySQL URL database extraction
+        let config = DatabaseConfig::parse("mysql://user:pass@host:3306/mydb").unwrap();
+        assert_eq!(config.database, Some("mydb".to_string()));
+
+        // With query params
+        let config2 = DatabaseConfig::parse("mysql://host:3306/production?charset=utf8").unwrap();
+        assert_eq!(config2.database, Some("production".to_string()));
+    }
+
+    #[test]
+    fn test_database_extraction_postgres() {
+        // T019: Test PostgreSQL URL database extraction
+        let config = DatabaseConfig::parse("postgres://user:pass@host:5432/analytics").unwrap();
+        assert_eq!(config.database, Some("analytics".to_string()));
+
+        // Alternative scheme
+        let config2 = DatabaseConfig::parse("postgresql://host/mydb").unwrap();
+        assert_eq!(config2.database, Some("mydb".to_string()));
+    }
+
+    #[test]
+    fn test_database_extraction_sqlite() {
+        // T020: Test SQLite file path extraction (strips extensions)
+        let config = DatabaseConfig::parse("sqlite://path/to/local.db").unwrap();
+        assert_eq!(config.database, Some("local".to_string()));
+
+        let config2 = DatabaseConfig::parse("sqlite://path/to/test.sqlite").unwrap();
+        assert_eq!(config2.database, Some("test".to_string()));
+
+        // Without extension
+        let config3 = DatabaseConfig::parse("sqlite:./data/mydata").unwrap();
+        assert_eq!(config3.database, Some("mydata".to_string()));
+    }
+
+    #[test]
+    fn test_database_extraction_server_level() {
+        // T021: Test server-level URLs return None
+        let config = DatabaseConfig::parse("mysql://host:3306").unwrap();
+        assert!(
+            config.database.is_none(),
+            "Server-level MySQL should have no database"
+        );
+
+        let config2 = DatabaseConfig::parse("postgres://host:5432/").unwrap();
+        assert!(
+            config2.database.is_none(),
+            "Server-level Postgres should have no database"
+        );
     }
 }

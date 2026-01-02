@@ -693,10 +693,7 @@ mod tests {
     #[test]
     fn test_parse_default_value_float_types() {
         // float/double should become JSON numbers
-        assert_eq!(
-            parse_default_value("1.5", "float"),
-            serde_json::json!(1.5)
-        );
+        assert_eq!(parse_default_value("1.5", "float"), serde_json::json!(1.5));
         assert_eq!(
             parse_default_value("99.99", "double"),
             serde_json::json!(99.99)
@@ -765,22 +762,13 @@ mod tests {
     #[test]
     fn test_parse_default_value_json_types() {
         // JSON types should be parsed as JSON values
-        assert_eq!(
-            parse_default_value("{}", "json"),
-            serde_json::json!({})
-        );
-        assert_eq!(
-            parse_default_value("[]", "jsonb"),
-            serde_json::json!([])
-        );
+        assert_eq!(parse_default_value("{}", "json"), serde_json::json!({}));
+        assert_eq!(parse_default_value("[]", "jsonb"), serde_json::json!([]));
         assert_eq!(
             parse_default_value(r#"{"key": "value"}"#, "json"),
             serde_json::json!({"key": "value"})
         );
-        assert_eq!(
-            parse_default_value("null", "json"),
-            serde_json::Value::Null
-        );
+        assert_eq!(parse_default_value("null", "json"), serde_json::Value::Null);
         assert_eq!(
             parse_default_value("[1, 2, 3]", "jsonb"),
             serde_json::json!([1, 2, 3])

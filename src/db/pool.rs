@@ -31,16 +31,18 @@ const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
 /// Connection information returned by list_connections. Safe to expose - no secrets.
 #[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
 pub struct ConnectionSummary {
-    /// Unique connection identifier used in all tool calls
+    /// Connection identifier. Use this value in connection_id parameter for all tool calls.
     pub id: String,
     /// Database type: "postgresql", "mysql", or "sqlite"
     pub db_type: DatabaseType,
     /// If true, connection allows write operations (execute, begin_transaction). If false, only read operations allowed.
     pub writable: bool,
-    /// Optional display name for the connection
-    pub name: Option<String>,
     /// If true, connection is at server level (no database in URL). Requires schema parameter for list_tables/describe_table.
     pub server_level: bool,
+    /// Database name extracted from connection URL. Only present when a specific database
+    /// is targeted (omitted for server-level connections).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
 }
 
 /// Database-specific connection pool.
@@ -159,8 +161,8 @@ impl ConnectionManager {
             database_type: db_type,
             server_version,
             writable: config.writable,
-            name: config.name,
             server_level: config.server_level,
+            database: config.database,
         })
     }
 
@@ -206,8 +208,8 @@ impl ConnectionManager {
                 id: entry.config.id.clone(),
                 db_type: entry.config.db_type,
                 writable: entry.config.writable,
-                name: entry.config.name.clone(),
                 server_level: entry.config.server_level,
+                database: entry.config.database.clone(),
             })
             .collect()
     }

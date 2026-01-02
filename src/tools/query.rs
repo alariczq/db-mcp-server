@@ -31,7 +31,7 @@ pub enum OutputFormat {
 
 /// Default value for decode_binary field.
 fn default_decode_binary() -> bool {
-    false
+    true
 }
 
 /// Input for the query tool.
@@ -53,7 +53,7 @@ pub struct QueryInput {
     /// Output format: "json" returns structured data, "table" returns ASCII table, "markdown" returns markdown table
     #[serde(default)]
     pub format: OutputFormat,
-    /// If true, try to decode binary columns as UTF-8 text first (fallback to base64). If false (default), always use base64 encoding.
+    /// If true (default), try to decode binary columns as UTF-8 text first (fallback to base64). If false, always use base64 encoding.
     #[serde(default = "default_decode_binary")]
     pub decode_binary: bool,
     /// Run query within an existing transaction (from begin_transaction). Omit for auto-commit.
@@ -493,8 +493,8 @@ mod tests {
         assert_eq!(input.sql, "SELECT * FROM users WHERE id = $1");
         assert_eq!(input.params.len(), 1);
         assert_eq!(input.limit, Some(100));
-        // decode_binary should default to false
-        assert!(!input.decode_binary);
+        // decode_binary should default to true
+        assert!(input.decode_binary);
     }
 
     #[test]

@@ -24,7 +24,9 @@ async fn test_transaction_rollback() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config = ConnectionConfig::new("test_mysql", &mysql_url, true, None, false).unwrap();
+    let config =
+        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
+            .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());
@@ -133,7 +135,9 @@ async fn test_transaction_commit() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config = ConnectionConfig::new("test_mysql", &mysql_url, true, None, false).unwrap();
+    let config =
+        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
+            .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());

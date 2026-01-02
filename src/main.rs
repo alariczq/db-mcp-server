@@ -79,20 +79,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for db_config in &db_configs {
         info!(
             id = %db_config.id,
+            database = ?db_config.database,
             writable = db_config.writable,
             "Connecting to database"
         );
 
         let db_type = DatabaseType::from_connection_string(&db_config.connection_string)
-            .ok_or_else(|| format!("Unknown database type for: {}", db_config.id))?;
+            .ok_or_else(|| format!("Unknown database type for connection: {}", db_config.id))?;
 
         let conn_config = ConnectionConfig {
             id: db_config.id.clone(),
             db_type,
             connection_string: db_config.connection_string.clone(),
             writable: db_config.writable,
-            name: Some(db_config.id.clone()),
             server_level: db_config.server_level,
+            database: db_config.database.clone(),
         };
 
         connection_manager.connect(conn_config).await?;

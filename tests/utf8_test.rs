@@ -21,7 +21,9 @@ async fn test_mysql_utf8_chinese_characters() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config = ConnectionConfig::new("test_mysql", &mysql_url, true, None, false).unwrap();
+    let config =
+        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
+            .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());
@@ -129,7 +131,9 @@ async fn test_mysql_table_comment_utf8() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config = ConnectionConfig::new("test_mysql", &mysql_url, true, None, false).unwrap();
+    let config =
+        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
+            .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());
