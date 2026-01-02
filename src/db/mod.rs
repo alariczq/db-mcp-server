@@ -11,6 +11,7 @@
 pub mod executor;
 #[macro_use]
 pub mod macros;
+pub mod params;
 pub mod pool;
 pub mod schema;
 pub mod transaction_registry;

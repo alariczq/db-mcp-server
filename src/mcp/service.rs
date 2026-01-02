@@ -6,14 +6,16 @@
 
 use crate::db::{ConnectionManager, ConnectionSummary, TransactionRegistry};
 use crate::error::DbError;
+use crate::tools::explain::{ExplainInput, ExplainOutput, ExplainToolHandler};
 use crate::tools::query::{QueryInput, QueryOutput, QueryToolHandler};
 use crate::tools::schema::{
     DescribeTableInput, DescribeTableOutput, ListDatabasesInput, ListDatabasesOutput,
     ListTablesInput, ListTablesOutput, SchemaToolHandler,
 };
 use crate::tools::transaction::{
-    BeginTransactionInput, BeginTransactionOutput, CommitInput, CommitOutput, RollbackInput,
-    RollbackOutput, TransactionToolHandler,
+    BeginTransactionInput, BeginTransactionOutput, CommitInput, CommitOutput,
+    ListTransactionsInput, ListTransactionsOutput, RollbackInput, RollbackOutput,
+    TransactionToolHandler,
 };
 use crate::tools::write::{ExecuteInput, ExecuteOutput, WriteToolHandler};
 use rmcp::Json;
@@ -231,6 +233,44 @@ impl DbService {
         );
         handler
             .rollback(input)
+            .await
+            .map(Json)
+            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+    }
+
+    #[tool(
+        description = "List all active database transactions.\nReturns transaction IDs, connection IDs, start times, and duration.\nLong-running transactions (>5 minutes) are flagged."
+    )]
+    async fn list_transactions(
+        &self,
+        Parameters(input): Parameters<ListTransactionsInput>,
+    ) -> Result<Json<ListTransactionsOutput>, McpError> {
+        let handler = TransactionToolHandler::new(
+            self.connection_manager.clone(),
+            self.transaction_registry.clone(),
+        );
+        handler
+            .list_transactions(input)
+            .await
+            .map(Json)
+            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+    }
+
+    #[tool(
+        description = "Show query execution plan without executing the query.\nSupports SELECT, INSERT, UPDATE, and DELETE statements.\nUseful for understanding query performance and index usage.\nOutput format: \"json\" returns structured data, \"table\" returns ASCII table, \"markdown\" returns markdown table."
+    )]
+    async fn explain(
+        &self,
+        Parameters(input): Parameters<ExplainInput>,
+    ) -> Result<Json<ExplainOutput>, McpError> {
+        let mut input = input;
+        input.connection_id = self.validate_connection_id(&input.connection_id)?;
+        let handler = ExplainToolHandler::new(
+            self.connection_manager.clone(),
+            self.transaction_registry.clone(),
+        );
+        handler
+            .explain(input)
             .await
             .map(Json)
             .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))

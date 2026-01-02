@@ -262,7 +262,7 @@ mod mysql {
             QueryParam::Int(v) => query.bind(*v),
             QueryParam::Float(v) => query.bind(*v),
             QueryParam::String(v) => query.bind(v.as_str()),
-            QueryParam::Bytes(v) => query.bind(v.as_slice()),
+            QueryParam::Json(v) => query.bind(sqlx::types::Json(v)),
         }
     }
 }
@@ -334,7 +334,7 @@ mod postgres {
             QueryParam::Int(v) => query.bind(*v),
             QueryParam::Float(v) => query.bind(*v),
             QueryParam::String(v) => query.bind(v.as_str()),
-            QueryParam::Bytes(v) => query.bind(v.as_slice()),
+            QueryParam::Json(v) => query.bind(sqlx::types::Json(v)),
         }
     }
 }
@@ -406,7 +406,8 @@ mod sqlite {
             QueryParam::Int(v) => query.bind(*v),
             QueryParam::Float(v) => query.bind(*v),
             QueryParam::String(v) => query.bind(v.as_str()),
-            QueryParam::Bytes(v) => query.bind(v.as_slice()),
+            // SQLite doesn't have native JSON type, store as string
+            QueryParam::Json(v) => query.bind(v.to_string()),
         }
     }
 }

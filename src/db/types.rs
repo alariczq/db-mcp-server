@@ -364,13 +364,11 @@ mod mysql {
     }
 
     fn decode_json_string(row: &MySqlRow, idx: usize) -> JsonValue {
-        if let Ok(Some(v)) = row.try_get::<Option<String>, _>(idx) {
-            if let Ok(json) = serde_json::from_str::<JsonValue>(&v) {
-                return json;
-            }
-            return JsonValue::String(v);
-        }
-        JsonValue::Null
+        // MySQL JSON type should be decoded as serde_json::Value directly
+        row.try_get::<Option<serde_json::Value>, _>(idx)
+            .ok()
+            .flatten()
+            .unwrap_or(JsonValue::Null)
     }
 
     fn decode_text(row: &MySqlRow, idx: usize, type_name: &str) -> JsonValue {

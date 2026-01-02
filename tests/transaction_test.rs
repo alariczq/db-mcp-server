@@ -2,7 +2,8 @@
 
 use db_mcp_server::db::{ConnectionManager, TransactionRegistry};
 use db_mcp_server::models::ConnectionConfig;
-use db_mcp_server::tools::query::{OutputFormat, QueryInput, QueryToolHandler};
+use db_mcp_server::tools::OutputFormat;
+use db_mcp_server::tools::query::{QueryInput, QueryToolHandler};
 use db_mcp_server::tools::transaction::{
     BeginTransactionInput, CommitInput, RollbackInput, TransactionToolHandler,
 };
@@ -24,9 +25,14 @@ async fn test_transaction_rollback() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config =
-        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
-            .unwrap();
+    let config = ConnectionConfig::new(
+        "test_mysql",
+        &mysql_url,
+        true,
+        false,
+        Some("test".to_string()),
+    )
+    .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());
@@ -135,9 +141,14 @@ async fn test_transaction_commit() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config =
-        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
-            .unwrap();
+    let config = ConnectionConfig::new(
+        "test_mysql",
+        &mysql_url,
+        true,
+        false,
+        Some("test".to_string()),
+    )
+    .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());

@@ -2,6 +2,7 @@
 //!
 //! This module defines types for SQL query requests and results.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -17,6 +18,40 @@ pub const DEFAULT_QUERY_TIMEOUT_SECS: u32 = 30;
 /// Maximum query timeout in seconds.
 pub const MAX_QUERY_TIMEOUT_SECS: u32 = 300;
 
+/// Input parameter that can be various JSON types.
+///
+/// This enum is used for MCP tool input parameters. It supports the common
+/// JSON types that can be provided by external callers.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum QueryParamInput {
+    /// Null value
+    Null,
+    /// Boolean value
+    Bool(bool),
+    /// Integer value
+    Int(i64),
+    /// Float value
+    Float(f64),
+    /// String value
+    String(String),
+    /// JSON object or array value (for JSON columns)
+    Json(serde_json::Value),
+}
+
+impl From<QueryParamInput> for QueryParam {
+    fn from(input: QueryParamInput) -> Self {
+        match input {
+            QueryParamInput::Null => QueryParam::Null,
+            QueryParamInput::Bool(v) => QueryParam::Bool(v),
+            QueryParamInput::Int(v) => QueryParam::Int(v),
+            QueryParamInput::Float(v) => QueryParam::Float(v),
+            QueryParamInput::String(v) => QueryParam::String(v),
+            QueryParamInput::Json(v) => QueryParam::Json(v),
+        }
+    }
+}
+
 /// A parameter value for parameterized queries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -31,9 +66,8 @@ pub enum QueryParam {
     Float(f64),
     /// String value
     String(String),
-    /// Binary data (base64 encoded in JSON)
-    #[serde(with = "base64_bytes")]
-    Bytes(Vec<u8>),
+    /// JSON value (for JSON columns)
+    Json(serde_json::Value),
 }
 
 impl QueryParam {
@@ -50,29 +84,8 @@ impl QueryParam {
             Self::Int(_) => "int",
             Self::Float(_) => "float",
             Self::String(_) => "string",
-            Self::Bytes(_) => "bytes",
+            Self::Json(_) => "json",
         }
-    }
-}
-
-/// Custom serialization for binary data as base64.
-mod base64_bytes {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        STANDARD.encode(bytes).serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }
 

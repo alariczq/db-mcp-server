@@ -5,8 +5,7 @@
 
 use crate::db::{ConnectionManager, QueryExecutor, TransactionRegistry};
 use crate::error::{DbError, DbResult};
-use crate::models::QueryParam;
-use crate::tools::query::QueryParamInput;
+use crate::models::{QueryParam, QueryParamInput};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

@@ -199,6 +199,12 @@ impl ConnectionManager {
         pools.keys().cloned().collect()
     }
 
+    /// Check if a connection exists.
+    pub async fn exists(&self, connection_id: &str) -> bool {
+        let pools = self.pools.read().await;
+        pools.contains_key(connection_id)
+    }
+
     /// List all active connections with details.
     pub async fn list_connections_detail(&self) -> Vec<ConnectionSummary> {
         let pools = self.pools.read().await;

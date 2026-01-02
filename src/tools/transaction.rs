@@ -4,6 +4,7 @@
 //! - `begin_transaction`: Start a new transaction
 //! - `commit`: Commit an active transaction
 //! - `rollback`: Rollback an active transaction
+//! - `list_transactions`: List all active transactions
 //!
 //! Transactions are managed by the TransactionRegistry, which maintains
 //! transaction state across multiple tool calls.
@@ -77,6 +78,46 @@ pub struct RollbackOutput {
     pub transaction_id: String,
     /// Human-readable status message
     pub message: String,
+}
+
+/// Information about an active transaction.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct TransactionInfo {
+    /// Unique transaction identifier
+    pub transaction_id: String,
+    /// Database connection this transaction belongs to
+    pub connection_id: String,
+    /// ISO8601 timestamp when transaction started
+    pub started_at: String,
+    /// Seconds since transaction started
+    pub duration_secs: u64,
+    /// Configured timeout for this transaction
+    pub timeout_secs: u32,
+    /// True if duration exceeds 5 minutes (300 seconds)
+    pub is_long_running: bool,
+}
+
+/// Threshold in seconds for marking a transaction as long-running.
+pub const LONG_RUNNING_THRESHOLD_SECS: u64 = 300;
+
+/// Input for the list_transactions tool.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+pub struct ListTransactionsInput {
+    /// Filter by connection ID. If not specified, returns transactions from all connections.
+    #[serde(default)]
+    pub connection_id: Option<String>,
+}
+
+/// Output from the list_transactions tool.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ListTransactionsOutput {
+    /// List of active transactions
+    pub transactions: Vec<TransactionInfo>,
+    /// Number of transactions returned
+    pub count: usize,
+    /// Optional informational message
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Handler for transaction management tools.
@@ -198,6 +239,53 @@ impl TransactionToolHandler {
             success: true,
             transaction_id: input.transaction_id,
             message: "Transaction rolled back successfully".to_string(),
+        })
+    }
+
+    /// Handle the list_transactions tool call.
+    ///
+    /// Lists all active transactions with their metadata. Optionally filters
+    /// by connection_id if provided.
+    pub async fn list_transactions(
+        &self,
+        input: ListTransactionsInput,
+    ) -> DbResult<ListTransactionsOutput> {
+        // Get all active transactions
+        let all_transactions = self.transaction_registry.list_all().await;
+
+        // Convert to TransactionInfo with is_long_running calculation
+        let mut transactions: Vec<TransactionInfo> = all_transactions
+            .into_iter()
+            .map(|meta| TransactionInfo {
+                transaction_id: meta.transaction_id,
+                connection_id: meta.connection_id,
+                started_at: meta.started_at.to_rfc3339(),
+                duration_secs: meta.duration_secs,
+                timeout_secs: meta.timeout_secs,
+                is_long_running: meta.duration_secs >= LONG_RUNNING_THRESHOLD_SECS,
+            })
+            .collect();
+
+        // Filter by connection_id if provided
+        if let Some(ref filter_conn_id) = input.connection_id {
+            // Validate connection exists
+            if !self.connection_manager.exists(filter_conn_id).await {
+                return Err(DbError::connection_not_found(filter_conn_id));
+            }
+            transactions.retain(|t| &t.connection_id == filter_conn_id);
+        }
+
+        let count = transactions.len();
+        let message = if count == 0 {
+            Some("No active transactions".to_string())
+        } else {
+            None
+        };
+
+        Ok(ListTransactionsOutput {
+            transactions,
+            count,
+            message,
         })
     }
 }

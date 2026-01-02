@@ -3,7 +3,8 @@
 use db_mcp_server::db::ConnectionManager;
 use db_mcp_server::db::TransactionRegistry;
 use db_mcp_server::models::ConnectionConfig;
-use db_mcp_server::tools::query::{OutputFormat, QueryInput, QueryToolHandler};
+use db_mcp_server::tools::OutputFormat;
+use db_mcp_server::tools::query::{QueryInput, QueryToolHandler};
 use db_mcp_server::tools::write::{ExecuteInput, WriteToolHandler};
 use std::sync::Arc;
 
@@ -21,9 +22,14 @@ async fn test_mysql_utf8_chinese_characters() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config =
-        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
-            .unwrap();
+    let config = ConnectionConfig::new(
+        "test_mysql",
+        &mysql_url,
+        true,
+        false,
+        Some("test".to_string()),
+    )
+    .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());
@@ -131,9 +137,14 @@ async fn test_mysql_table_comment_utf8() {
 
     // Setup
     let manager = Arc::new(ConnectionManager::new());
-    let config =
-        ConnectionConfig::new("test_mysql", &mysql_url, true, false, Some("test".to_string()))
-            .unwrap();
+    let config = ConnectionConfig::new(
+        "test_mysql",
+        &mysql_url,
+        true,
+        false,
+        Some("test".to_string()),
+    )
+    .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());
