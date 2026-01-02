@@ -1,0 +1,83 @@
+[package]
+name = "db-mcp-server"
+version = "0.1.0"
+edition = "2024"
+description = "MCP server for database operations - enables AI assistants to query SQL databases"
+license = "MIT"
+repository = "https://github.com/example/db-mcp-server"
+keywords = ["mcp", "database", "sqlite", "postgresql", "mysql"]
+categories = ["database", "command-line-utilities"]
+
+[dependencies]
+# MCP Framework - Official Rust SDK
+rmcp = { version = "0.11", features = [
+    "server",
+    "macros",
+    "schemars",
+    "transport-io",
+    "transport-streamable-http-server",
+] }
+
+# HTTP server (used by rmcp streamable-http)
+axum = "0.8"
+
+# Database access
+sqlx = { version = "0.8", features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "mysql",
+    "sqlite",
+    "any",
+    "json",
+    "chrono"
+]}
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling and logging
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive", "env"] }
+
+# URL parsing
+url = "2"
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+humansize = "2"
+
+# JSON Schema generation for MCP tools
+schemars = { version = "1.0", features = ["derive"] }
+futures-util = "0.3.31"
+unicode-width = "0.2.2"
+
+# SQL parsing for read-only validation
+sqlparser = "0.60"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3"
+
+[[bin]]
+name = "db-mcp-server"
+path = "src/main.rs"
+
+[lib]
+name = "db_mcp_server"
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
