@@ -60,7 +60,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let connection_manager = Arc::new(ConnectionManager::new());
-    let transaction_registry = Arc::new(TransactionRegistry::new());
+    let transaction_registry = Arc::new(TransactionRegistry::with_defaults(
+        config.transaction_timeout as u32,
+    ));
     TransactionRegistry::start_cleanup_task(transaction_registry.clone());
 
     let db_configs = config.parse_databases()?;
@@ -87,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             writable: db_config.writable,
             server_level: db_config.server_level,
             database: db_config.database.clone(),
+            pool_options: db_config.pool_options.clone(),
         };
 
         connection_manager.connect(conn_config).await?;
@@ -95,7 +98,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = match config.transport {
         TransportMode::Stdio => {
             info!("Using stdio transport");
-            let transport = StdioTransport::new(connection_manager, transaction_registry);
+            let transport = StdioTransport::with_config(
+                connection_manager,
+                transaction_registry,
+                config.query_timeout,
+                100, // Default row limit
+            );
             transport.run().await
         }
         TransportMode::Http => {
@@ -105,12 +113,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 endpoint = %config.mcp_endpoint,
                 "Using HTTP transport"
             );
-            let transport = HttpTransport::new(
+            let transport = HttpTransport::with_config(
                 connection_manager,
                 transaction_registry,
                 &config.http_host,
                 config.http_port,
                 &config.mcp_endpoint,
+                config.query_timeout,
+                100, // Default row limit
             );
             transport.run().await
         }

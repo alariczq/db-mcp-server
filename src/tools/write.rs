@@ -63,6 +63,18 @@ impl WriteToolHandler {
         }
     }
 
+    pub fn with_defaults(
+        connection_manager: Arc<ConnectionManager>,
+        transaction_registry: Arc<TransactionRegistry>,
+        default_timeout_secs: u64,
+    ) -> Self {
+        Self {
+            connection_manager,
+            transaction_registry,
+            executor: QueryExecutor::with_defaults(default_timeout_secs, 100),
+        }
+    }
+
     pub async fn execute(&self, input: ExecuteInput) -> DbResult<ExecuteOutput> {
         let is_writable = self
             .connection_manager

@@ -12,12 +12,9 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
-    /// JSON format (default)
     #[default]
     Json,
-    /// ASCII table format (like MySQL CLI)
     Table,
-    /// Markdown table format
     Markdown,
 }
 

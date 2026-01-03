@@ -153,6 +153,12 @@ pub struct QueryResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rows_affected: Option<u64>,
     pub execution_time_ms: u64,
+    /// True if results were truncated due to limit
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
+    /// True if more rows exist beyond the limit
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_more: Option<bool>,
 }
 
 impl QueryResult {
@@ -163,6 +169,8 @@ impl QueryResult {
             rows: Vec::new(),
             rows_affected: None,
             execution_time_ms,
+            truncated: None,
+            has_more: None,
         }
     }
 
@@ -173,6 +181,8 @@ impl QueryResult {
             rows: Vec::new(),
             rows_affected: Some(rows_affected),
             execution_time_ms,
+            truncated: None,
+            has_more: None,
         }
     }
 
@@ -271,5 +281,34 @@ mod tests {
         let result = QueryResult::write_result(5, 20);
         assert!(!result.is_empty());
         assert_eq!(result.rows_affected, Some(5));
+    }
+
+    #[test]
+    fn test_query_result_truncation_fields() {
+        let result = QueryResult::empty(10);
+        assert_eq!(result.truncated, None);
+        assert_eq!(result.has_more, None);
+
+        let result_write = QueryResult::write_result(5, 20);
+        assert_eq!(result_write.truncated, None);
+        assert_eq!(result_write.has_more, None);
+    }
+
+    #[test]
+    fn test_query_result_serialization_skips_none_truncation() {
+        let result = QueryResult::empty(10);
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(!json.contains("truncated"));
+        assert!(!json.contains("has_more"));
+    }
+
+    #[test]
+    fn test_query_result_serialization_includes_truncation_when_set() {
+        let mut result = QueryResult::empty(10);
+        result.truncated = Some(true);
+        result.has_more = Some(true);
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"truncated\":true"));
+        assert!(json.contains("\"has_more\":true"));
     }
 }

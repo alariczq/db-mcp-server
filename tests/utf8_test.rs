@@ -1,5 +1,6 @@
 //! Integration tests for UTF-8 encoding in MySQL.
 
+use db_mcp_server::config::PoolOptions;
 use db_mcp_server::db::ConnectionManager;
 use db_mcp_server::db::TransactionRegistry;
 use db_mcp_server::models::ConnectionConfig;
@@ -28,6 +29,7 @@ async fn test_mysql_utf8_chinese_characters() {
         true,
         false,
         Some("test".to_string()),
+        PoolOptions::default(),
     )
     .unwrap();
     manager.connect(config).await.unwrap();
@@ -147,6 +149,7 @@ async fn test_mysql_table_comment_utf8() {
         true,
         false,
         Some("test".to_string()),
+        PoolOptions::default(),
     )
     .unwrap();
     manager.connect(config).await.unwrap();

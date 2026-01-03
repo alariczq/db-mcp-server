@@ -1,5 +1,6 @@
 //! Integration tests for the explain tool.
 
+use db_mcp_server::config::PoolOptions;
 use db_mcp_server::db::{ConnectionManager, TransactionRegistry};
 use db_mcp_server::models::ConnectionConfig;
 use db_mcp_server::tools::{ExplainInput, ExplainOutput, ExplainToolHandler};
@@ -20,6 +21,7 @@ async fn create_test_connection_manager() -> (Arc<ConnectionManager>, String, Na
         true,  // writable
         false, // not server_level
         None,
+        PoolOptions::default(),
     )
     .expect("Failed to create config");
     manager

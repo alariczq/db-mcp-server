@@ -5,7 +5,6 @@
 //! Tool names use simplified format without `db_` prefix.
 
 use crate::db::{ConnectionManager, ConnectionSummary, TransactionRegistry};
-use crate::error::DbError;
 use crate::tools::explain::{ExplainInput, ExplainOutput, ExplainToolHandler};
 use crate::tools::query::{QueryInput, QueryOutput, QueryToolHandler};
 use crate::tools::schema::{
@@ -45,12 +44,21 @@ pub struct DbService {
     connection_manager: Arc<ConnectionManager>,
     /// Shared transaction registry for transaction management
     transaction_registry: Arc<TransactionRegistry>,
+    /// Default query timeout in seconds (from config)
+    default_query_timeout_secs: u64,
+    /// Default row limit for queries (from config)
+    default_row_limit: u32,
     /// Tool router for MCP tool dispatch (auto-generated)
     tool_router: ToolRouter<Self>,
 }
 
+/// Default query timeout in seconds.
+const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 30;
+/// Default row limit for queries.
+const DEFAULT_ROW_LIMIT: u32 = 100;
+
 impl DbService {
-    /// Create a new DbService instance.
+    /// Create a new DbService instance with default timeouts.
     ///
     /// # Arguments
     ///
@@ -63,6 +71,31 @@ impl DbService {
         Self {
             connection_manager,
             transaction_registry,
+            default_query_timeout_secs: DEFAULT_QUERY_TIMEOUT_SECS,
+            default_row_limit: DEFAULT_ROW_LIMIT,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Create a new DbService instance with custom timeout configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `connection_manager` - Shared connection manager for database operations
+    /// * `transaction_registry` - Shared transaction registry for transaction management
+    /// * `query_timeout_secs` - Default timeout for queries in seconds
+    /// * `row_limit` - Default row limit for queries
+    pub fn with_config(
+        connection_manager: Arc<ConnectionManager>,
+        transaction_registry: Arc<TransactionRegistry>,
+        query_timeout_secs: u64,
+        row_limit: u32,
+    ) -> Self {
+        Self {
+            connection_manager,
+            transaction_registry,
+            default_query_timeout_secs: query_timeout_secs,
+            default_row_limit: row_limit,
             tool_router: Self::tool_router(),
         }
     }
@@ -104,15 +137,13 @@ impl DbService {
     ) -> Result<Json<QueryOutput>, McpError> {
         let mut input = input;
         input.connection_id = self.validate_connection_id(&input.connection_id)?;
-        let handler = QueryToolHandler::with_transaction_registry(
+        let handler = QueryToolHandler::with_defaults(
             self.connection_manager.clone(),
             self.transaction_registry.clone(),
+            self.default_query_timeout_secs,
+            self.default_row_limit,
         );
-        handler
-            .query(input)
-            .await
-            .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+        handler.query(input).await.map(Json).map_err(Into::into)
     }
 
     #[tool(
@@ -129,7 +160,7 @@ impl DbService {
             .list_databases(input)
             .await
             .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+            .map_err(Into::into)
     }
 
     #[tool(
@@ -146,7 +177,7 @@ impl DbService {
             .list_tables(input)
             .await
             .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+            .map_err(Into::into)
     }
 
     #[tool(
@@ -163,7 +194,7 @@ impl DbService {
             .describe_table(input)
             .await
             .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+            .map_err(Into::into)
     }
 
     #[tool(
@@ -175,15 +206,12 @@ impl DbService {
     ) -> Result<Json<ExecuteOutput>, McpError> {
         let mut input = input;
         input.connection_id = self.validate_connection_id(&input.connection_id)?;
-        let handler = WriteToolHandler::new(
+        let handler = WriteToolHandler::with_defaults(
             self.connection_manager.clone(),
             self.transaction_registry.clone(),
+            self.default_query_timeout_secs,
         );
-        handler
-            .execute(input)
-            .await
-            .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+        handler.execute(input).await.map(Json).map_err(Into::into)
     }
 
     #[tool(
@@ -203,7 +231,7 @@ impl DbService {
             .begin_transaction(input)
             .await
             .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+            .map_err(Into::into)
     }
 
     #[tool(description = "Commit a transaction.\nUse transaction_id from begin_transaction.")]
@@ -215,11 +243,7 @@ impl DbService {
             self.connection_manager.clone(),
             self.transaction_registry.clone(),
         );
-        handler
-            .commit(input)
-            .await
-            .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+        handler.commit(input).await.map(Json).map_err(Into::into)
     }
 
     #[tool(description = "Rollback a transaction.\nUse transaction_id from begin_transaction.")]
@@ -231,11 +255,7 @@ impl DbService {
             self.connection_manager.clone(),
             self.transaction_registry.clone(),
         );
-        handler
-            .rollback(input)
-            .await
-            .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+        handler.rollback(input).await.map(Json).map_err(Into::into)
     }
 
     #[tool(
@@ -253,7 +273,7 @@ impl DbService {
             .list_transactions(input)
             .await
             .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+            .map_err(Into::into)
     }
 
     #[tool(
@@ -269,11 +289,7 @@ impl DbService {
             self.connection_manager.clone(),
             self.transaction_registry.clone(),
         );
-        handler
-            .explain(input)
-            .await
-            .map(Json)
-            .map_err(|e: DbError| McpError::internal_error(e.to_string(), None))
+        handler.explain(input).await.map(Json).map_err(Into::into)
     }
 }
 

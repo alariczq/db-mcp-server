@@ -1,5 +1,6 @@
 //! Integration tests for transaction functionality.
 
+use db_mcp_server::config::PoolOptions;
 use db_mcp_server::db::{ConnectionManager, TransactionRegistry};
 use db_mcp_server::models::ConnectionConfig;
 use db_mcp_server::tools::OutputFormat;
@@ -31,6 +32,7 @@ async fn test_transaction_rollback() {
         true,
         false,
         Some("test".to_string()),
+        PoolOptions::default(),
     )
     .unwrap();
     manager.connect(config).await.unwrap();
@@ -150,6 +152,7 @@ async fn test_transaction_commit() {
         true,
         false,
         Some("test".to_string()),
+        PoolOptions::default(),
     )
     .unwrap();
     manager.connect(config).await.unwrap();

@@ -16,18 +16,6 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-/// Default minimum connections in the pool.
-const DEFAULT_MIN_CONNECTIONS: u32 = 1;
-
-/// Default maximum connections in the pool.
-const DEFAULT_MAX_CONNECTIONS: u32 = 10;
-
-/// Default connection acquire timeout in seconds.
-const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
-
-/// Default idle timeout in seconds.
-const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
-
 /// Connection information returned by list_connections (no secrets exposed).
 #[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
 pub struct ConnectionSummary {
@@ -83,7 +71,6 @@ struct PoolEntry {
 #[derive(Debug, Clone)]
 pub struct ConnectionManager {
     pools: Arc<RwLock<HashMap<String, PoolEntry>>>,
-    acquire_timeout: Duration,
 }
 
 impl ConnectionManager {
@@ -91,15 +78,6 @@ impl ConnectionManager {
     pub fn new() -> Self {
         Self {
             pools: Arc::new(RwLock::new(HashMap::new())),
-            acquire_timeout: Duration::from_secs(DEFAULT_ACQUIRE_TIMEOUT_SECS),
-        }
-    }
-
-    /// Create a new connection manager with custom timeouts.
-    pub fn with_timeout(acquire_timeout: Duration) -> Self {
-        Self {
-            pools: Arc::new(RwLock::new(HashMap::new())),
-            acquire_timeout,
         }
     }
 
@@ -226,6 +204,11 @@ impl ConnectionManager {
 
     /// Create a connection pool for the given configuration.
     async fn create_pool(&self, config: &ConnectionConfig) -> DbResult<DbPool> {
+        let pool_opts = &config.pool_options;
+        let is_sqlite = config.db_type == DatabaseType::SQLite;
+        let acquire_timeout = Duration::from_secs(pool_opts.acquire_timeout_or_default());
+        let idle_timeout = Some(Duration::from_secs(pool_opts.idle_timeout_or_default()));
+
         match config.db_type {
             DatabaseType::MySQL => {
                 let options = MySqlConnectOptions::from_str(&config.connection_string)
@@ -238,11 +221,11 @@ impl ConnectionManager {
                     .charset("utf8mb4");
 
                 let pool = MySqlPoolOptions::new()
-                    .min_connections(DEFAULT_MIN_CONNECTIONS)
-                    .max_connections(DEFAULT_MAX_CONNECTIONS)
-                    .acquire_timeout(self.acquire_timeout)
-                    .idle_timeout(Some(Duration::from_secs(DEFAULT_IDLE_TIMEOUT_SECS)))
-                    .test_before_acquire(true)
+                    .min_connections(pool_opts.min_connections_or_default())
+                    .max_connections(pool_opts.max_connections_or_default(is_sqlite))
+                    .acquire_timeout(acquire_timeout)
+                    .idle_timeout(idle_timeout)
+                    .test_before_acquire(pool_opts.test_before_acquire_or_default())
                     .connect_with(options)
                     .await
                     .map_err(|e| {
@@ -255,11 +238,11 @@ impl ConnectionManager {
             }
             DatabaseType::PostgreSQL => {
                 let pool = PgPoolOptions::new()
-                    .min_connections(DEFAULT_MIN_CONNECTIONS)
-                    .max_connections(DEFAULT_MAX_CONNECTIONS)
-                    .acquire_timeout(self.acquire_timeout)
-                    .idle_timeout(Some(Duration::from_secs(DEFAULT_IDLE_TIMEOUT_SECS)))
-                    .test_before_acquire(true)
+                    .min_connections(pool_opts.min_connections_or_default())
+                    .max_connections(pool_opts.max_connections_or_default(is_sqlite))
+                    .acquire_timeout(acquire_timeout)
+                    .idle_timeout(idle_timeout)
+                    .test_before_acquire(pool_opts.test_before_acquire_or_default())
                     .connect(&config.connection_string)
                     .await
                     .map_err(|e| {
@@ -272,11 +255,11 @@ impl ConnectionManager {
             }
             DatabaseType::SQLite => {
                 let pool = SqlitePoolOptions::new()
-                    .min_connections(DEFAULT_MIN_CONNECTIONS)
-                    .max_connections(DEFAULT_MAX_CONNECTIONS)
-                    .acquire_timeout(self.acquire_timeout)
-                    .idle_timeout(Some(Duration::from_secs(DEFAULT_IDLE_TIMEOUT_SECS)))
-                    .test_before_acquire(true)
+                    .min_connections(pool_opts.min_connections_or_default())
+                    .max_connections(pool_opts.max_connections_or_default(is_sqlite))
+                    .acquire_timeout(acquire_timeout)
+                    .idle_timeout(idle_timeout)
+                    .test_before_acquire(pool_opts.test_before_acquire_or_default())
                     .connect(&config.connection_string)
                     .await
                     .map_err(|e| {

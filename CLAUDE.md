@@ -136,12 +136,3 @@ fn generate_explain_sql(pool: &DbPool, sql: &str) -> String { ... }
 | `begin_transaction` | Start a transaction |
 | `commit` | Commit a transaction |
 | `rollback` | Rollback a transaction |
-
-## Active Technologies
-- Rust 2024 Edition (stable) + rmcp 0.12.0 (MCP framework), sqlx 0.8 (database), tokio (async runtime), schemars (JSON schema) (002-transaction-explain-tools)
-- N/A (uses existing connection pools) (002-transaction-explain-tools)
-- Rust 2024 Edition + sqlx 0.8, rmcp 0.12.0, schemars, serde (003-code-refactor)
-- N/A (refactoring only) (003-code-refactor)
-- Rust 2024 Edition (stable) + rmcp 0.12.0 (MCP framework), schemars (JSON Schema generation) (004-mcp-tool-descriptions)
-- N/A (documentation-only changes) (004-mcp-tool-descriptions)
-- Rust 2024 Edition (stable) + rmcp 0.12.0 (MCP framework), sqlparser 0.60 (SQL parsing), sqlx 0.8 (database), schemars 1.0 (JSON schema) (005-dangerous-operation-guard)

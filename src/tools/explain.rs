@@ -156,13 +156,21 @@ impl ExplainToolHandler {
                 .await?;
             let explain_sql = Self::generate_explain_sql(&pool, sql);
 
-            let rows = self
+            // EXPLAIN queries don't need streaming limits, use a high limit
+            let result = self
                 .transaction_registry
-                .query_in_transaction(tx_id, &input.connection_id, &explain_sql, &params)
+                .query_in_transaction(
+                    tx_id,
+                    &input.connection_id,
+                    &explain_sql,
+                    &params,
+                    10000, // EXPLAIN results are typically small
+                    true,  // decode_binary
+                )
                 .await?;
 
             return Ok(Self::build_output(
-                rows,
+                result.rows,
                 sql,
                 start.elapsed().as_millis() as u64,
                 format,

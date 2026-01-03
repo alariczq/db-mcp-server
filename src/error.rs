@@ -219,6 +219,47 @@ impl From<sqlx::Error> for DbError {
 /// Result type alias for database operations.
 pub type DbResult<T> = Result<T, DbError>;
 
+/// Convert DbError to MCP ErrorData for semantic error categorization.
+impl From<DbError> for rmcp::ErrorData {
+    fn from(err: DbError) -> Self {
+        match &err {
+            // InvalidInput, Permission, DangerousOperationBlocked, Schema -> invalid_params
+            DbError::InvalidInput { .. } => rmcp::ErrorData::invalid_params(err.to_string(), None),
+            DbError::Permission { .. } => rmcp::ErrorData::invalid_params(err.to_string(), None),
+            DbError::DangerousOperationBlocked { .. } => {
+                rmcp::ErrorData::invalid_params(err.to_string(), None)
+            }
+            DbError::Schema { .. } => rmcp::ErrorData::invalid_params(err.to_string(), None),
+
+            // ConnectionNotFound, Transaction -> resource_not_found
+            DbError::ConnectionNotFound { .. } => {
+                rmcp::ErrorData::resource_not_found(err.to_string(), None)
+            }
+            DbError::Transaction { .. } => {
+                rmcp::ErrorData::resource_not_found(err.to_string(), None)
+            }
+
+            // Connection, Timeout -> internal_error (with implicit retryable flag)
+            DbError::Connection { .. } => rmcp::ErrorData::internal_error(err.to_string(), None),
+            DbError::Timeout { .. } => rmcp::ErrorData::internal_error(err.to_string(), None),
+
+            // Database errors -> invalid_params with sql_state in message
+            DbError::Database {
+                message, sql_state, ..
+            } => {
+                let msg = match sql_state {
+                    Some(code) => format!("{} (SQLSTATE: {})", message, code),
+                    None => message.clone(),
+                };
+                rmcp::ErrorData::invalid_params(msg, None)
+            }
+
+            // Internal -> internal_error
+            DbError::Internal { .. } => rmcp::ErrorData::internal_error(err.to_string(), None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,5 +285,80 @@ mod tests {
         assert!(DbError::timeout("query", 30).is_retryable());
         assert!(DbError::connection("err", "sugg").is_retryable());
         assert!(!DbError::permission("write", "read-only").is_retryable());
+    }
+
+    // Tests for From<DbError> for rmcp::ErrorData
+
+    #[test]
+    fn test_invalid_input_maps_to_invalid_params() {
+        let err = DbError::invalid_input("bad input");
+        let mcp_err: rmcp::ErrorData = err.into();
+        // invalid_params uses -32602
+        assert_eq!(mcp_err.code.0, -32602);
+    }
+
+    #[test]
+    fn test_permission_maps_to_invalid_params() {
+        let err = DbError::permission("write", "read-only");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert_eq!(mcp_err.code.0, -32602);
+    }
+
+    #[test]
+    fn test_dangerous_operation_maps_to_invalid_params() {
+        let err = DbError::dangerous_operation_blocked("DROP", "destructive");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert_eq!(mcp_err.code.0, -32602);
+    }
+
+    #[test]
+    fn test_schema_maps_to_invalid_params() {
+        let err = DbError::schema("Table not found", "users");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert_eq!(mcp_err.code.0, -32602);
+    }
+
+    #[test]
+    fn test_connection_not_found_maps_to_resource_not_found() {
+        let err = DbError::connection_not_found("conn1");
+        let mcp_err: rmcp::ErrorData = err.into();
+        // resource_not_found uses -32002 in rmcp
+        assert_eq!(mcp_err.code.0, -32002);
+    }
+
+    #[test]
+    fn test_transaction_maps_to_resource_not_found() {
+        let err = DbError::transaction("not found", "tx_123");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert_eq!(mcp_err.code.0, -32002);
+    }
+
+    #[test]
+    fn test_connection_maps_to_internal_error() {
+        let err = DbError::connection("failed", "try again");
+        let mcp_err: rmcp::ErrorData = err.into();
+        // internal_error uses -32603
+        assert_eq!(mcp_err.code.0, -32603);
+    }
+
+    #[test]
+    fn test_timeout_maps_to_internal_error() {
+        let err = DbError::timeout("query", 30);
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert_eq!(mcp_err.code.0, -32603);
+    }
+
+    #[test]
+    fn test_database_error_includes_sql_state() {
+        let err = DbError::database("syntax error", Some("42601".to_string()), "check syntax");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert!(mcp_err.message.contains("42601"));
+    }
+
+    #[test]
+    fn test_internal_maps_to_internal_error() {
+        let err = DbError::internal("unknown error");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert_eq!(mcp_err.code.0, -32603);
     }
 }

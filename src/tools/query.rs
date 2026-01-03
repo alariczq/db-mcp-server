@@ -144,6 +144,19 @@ impl QueryToolHandler {
         }
     }
 
+    pub fn with_defaults(
+        connection_manager: Arc<ConnectionManager>,
+        transaction_registry: Arc<TransactionRegistry>,
+        default_timeout_secs: u64,
+        default_row_limit: u32,
+    ) -> Self {
+        Self {
+            connection_manager,
+            transaction_registry: Some(transaction_registry),
+            executor: QueryExecutor::with_defaults(default_timeout_secs, default_row_limit),
+        }
+    }
+
     pub fn with_executor(
         connection_manager: Arc<ConnectionManager>,
         executor: QueryExecutor,
@@ -182,36 +195,35 @@ impl QueryToolHandler {
             })?;
 
             let params: Vec<QueryParam> = input.params.into_iter().map(Into::into).collect();
-            let start = std::time::Instant::now();
-
-            let rows = registry
-                .query_in_transaction(tx_id, &input.connection_id, &input.sql, &params)
-                .await?;
-
-            let execution_time_ms = start.elapsed().as_millis() as u64;
-
             let effective_limit = input
                 .limit
                 .unwrap_or(DEFAULT_ROW_LIMIT)
-                .clamp(1, MAX_ROW_LIMIT) as usize;
-            let rows: Vec<_> = rows.into_iter().take(effective_limit).collect();
-            let row_count = rows.len();
+                .clamp(1, MAX_ROW_LIMIT);
+
+            let result = registry
+                .query_in_transaction(
+                    tx_id,
+                    &input.connection_id,
+                    &input.sql,
+                    &params,
+                    effective_limit,
+                    input.decode_binary,
+                )
+                .await?;
 
             info!(
                 connection_id = %input.connection_id,
                 transaction_id = %tx_id,
-                row_count = row_count,
-                execution_time_ms = execution_time_ms,
+                row_count = result.rows.len(),
+                execution_time_ms = result.execution_time_ms,
                 "Query executed in transaction"
             );
 
-            return Ok(QueryOutput {
-                rows,
-                formatted: None,
-                row_count,
-                execution_time_ms,
-                warning: limit_warning,
-            });
+            return Ok(QueryOutput::from_result_with_warning(
+                result,
+                input.format,
+                limit_warning,
+            ));
         }
 
         let pool = self

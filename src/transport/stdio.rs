@@ -12,6 +12,11 @@ use std::sync::Arc;
 use tokio::signal;
 use tracing::info;
 
+/// Default query timeout in seconds.
+const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 30;
+/// Default row limit for queries.
+const DEFAULT_ROW_LIMIT: u32 = 100;
+
 /// Stdio transport implementation.
 ///
 /// This transport reads JSON-RPC messages from stdin and writes
@@ -19,6 +24,8 @@ use tracing::info;
 pub struct StdioTransport {
     connection_manager: Arc<ConnectionManager>,
     transaction_registry: Arc<TransactionRegistry>,
+    query_timeout_secs: u64,
+    row_limit: u32,
 }
 
 impl StdioTransport {
@@ -35,6 +42,23 @@ impl StdioTransport {
         Self {
             connection_manager,
             transaction_registry,
+            query_timeout_secs: DEFAULT_QUERY_TIMEOUT_SECS,
+            row_limit: DEFAULT_ROW_LIMIT,
+        }
+    }
+
+    /// Create a new stdio transport with custom configuration.
+    pub fn with_config(
+        connection_manager: Arc<ConnectionManager>,
+        transaction_registry: Arc<TransactionRegistry>,
+        query_timeout_secs: u64,
+        row_limit: u32,
+    ) -> Self {
+        Self {
+            connection_manager,
+            transaction_registry,
+            query_timeout_secs,
+            row_limit,
         }
     }
 }
@@ -43,9 +67,11 @@ impl Transport for StdioTransport {
     async fn run(&self) -> DbResult<()> {
         info!("Starting MCP server with stdio transport");
 
-        let service = DbService::new(
+        let service = DbService::with_config(
             self.connection_manager.clone(),
             self.transaction_registry.clone(),
+            self.query_timeout_secs,
+            self.row_limit,
         );
 
         let transport = stdio();

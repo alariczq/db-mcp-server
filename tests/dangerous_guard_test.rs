@@ -3,6 +3,7 @@
 //! These tests verify that the dangerous operation guard correctly blocks
 //! dangerous operations by default and allows them when explicitly confirmed.
 
+use db_mcp_server::config::PoolOptions;
 use db_mcp_server::db::{ConnectionManager, TransactionRegistry};
 use db_mcp_server::models::ConnectionConfig;
 use db_mcp_server::tools::write::{ExecuteInput, WriteToolHandler};
@@ -11,8 +12,15 @@ use std::sync::Arc;
 /// Helper to setup test environment
 async fn setup_test_handler() -> (WriteToolHandler, String) {
     let manager = Arc::new(ConnectionManager::new());
-    let config =
-        ConnectionConfig::new("test_sqlite", "sqlite::memory:", true, false, None).unwrap();
+    let config = ConnectionConfig::new(
+        "test_sqlite",
+        "sqlite::memory:",
+        true,
+        false,
+        None,
+        PoolOptions::default(),
+    )
+    .unwrap();
     manager.connect(config).await.unwrap();
 
     let registry = Arc::new(TransactionRegistry::new());

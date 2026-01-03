@@ -174,7 +174,10 @@ impl RowToJson for MySqlRow {
     }
 
     fn get_column_names(&self) -> Vec<String> {
-        self.columns().iter().map(|col| col.name().to_string()).collect()
+        self.columns()
+            .iter()
+            .map(|col| col.name().to_string())
+            .collect()
     }
 }
 
@@ -197,7 +200,10 @@ impl RowToJson for PgRow {
     }
 
     fn get_column_names(&self) -> Vec<String> {
-        self.columns().iter().map(|col| col.name().to_string()).collect()
+        self.columns()
+            .iter()
+            .map(|col| col.name().to_string())
+            .collect()
     }
 }
 
@@ -220,7 +226,10 @@ impl RowToJson for SqliteRow {
     }
 
     fn get_column_names(&self) -> Vec<String> {
-        self.columns().iter().map(|col| col.name().to_string()).collect()
+        self.columns()
+            .iter()
+            .map(|col| col.name().to_string())
+            .collect()
     }
 }
 

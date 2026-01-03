@@ -2,6 +2,7 @@
 //!
 //! This module defines types for database connection configuration and state.
 
+use crate::config::PoolOptions;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +72,9 @@ pub struct ConnectionConfig {
     pub server_level: bool,
     /// Database name extracted from connection URL. None for server-level connections.
     pub database: Option<String>,
+    /// Connection pool configuration options.
+    #[serde(default)]
+    pub pool_options: PoolOptions,
 }
 
 impl ConnectionConfig {
@@ -81,6 +85,7 @@ impl ConnectionConfig {
         writable: bool,
         server_level: bool,
         database: Option<String>,
+        pool_options: PoolOptions,
     ) -> Result<Self, ConnectionConfigError> {
         let id = id.into();
         let connection_string = connection_string.into();
@@ -107,6 +112,7 @@ impl ConnectionConfig {
             writable,
             server_level,
             database,
+            pool_options,
         })
     }
 
@@ -238,6 +244,7 @@ mod tests {
             true,
             false,
             Some("db".to_string()),
+            PoolOptions::default(),
         )
         .unwrap();
 
@@ -256,6 +263,7 @@ mod tests {
             true,
             false,
             Some("db".to_string()),
+            PoolOptions::default(),
         )
         .unwrap();
 
@@ -266,14 +274,27 @@ mod tests {
 
     #[test]
     fn test_connection_config_empty_id() {
-        let result = ConnectionConfig::new("", "postgres://localhost/db", true, false, None);
+        let result = ConnectionConfig::new(
+            "",
+            "postgres://localhost/db",
+            true,
+            false,
+            None,
+            PoolOptions::default(),
+        );
         assert!(matches!(result, Err(ConnectionConfigError::EmptyId)));
     }
 
     #[test]
     fn test_connection_config_invalid_id() {
-        let result =
-            ConnectionConfig::new("test conn", "postgres://localhost/db", true, false, None);
+        let result = ConnectionConfig::new(
+            "test conn",
+            "postgres://localhost/db",
+            true,
+            false,
+            None,
+            PoolOptions::default(),
+        );
         assert!(matches!(result, Err(ConnectionConfigError::InvalidId(_))));
     }
 

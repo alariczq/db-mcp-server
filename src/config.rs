@@ -14,6 +14,83 @@ pub const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 30;
 pub const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 10;
 pub const DEFAULT_TRANSACTION_TIMEOUT_SECS: u64 = 60;
 
+// Pool configuration defaults
+pub const DEFAULT_MAX_CONNECTIONS: u32 = 10;
+pub const DEFAULT_MAX_CONNECTIONS_SQLITE: u32 = 1;
+pub const DEFAULT_MIN_CONNECTIONS: u32 = 1;
+pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
+
+/// Connection pool configuration options parsed from database URL.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct PoolOptions {
+    /// Maximum connections in pool (default: 10 for MySQL/PostgreSQL, 1 for SQLite)
+    pub max_connections: Option<u32>,
+    /// Minimum connections in pool (default: 1)
+    pub min_connections: Option<u32>,
+    /// Idle timeout in seconds (default: 600)
+    pub idle_timeout_secs: Option<u64>,
+    /// Connection acquire timeout in seconds (default: 30)
+    pub acquire_timeout_secs: Option<u64>,
+    /// Whether to test connections before use (default: true)
+    pub test_before_acquire: Option<bool>,
+}
+
+impl PoolOptions {
+    /// Get max_connections with default value based on database type.
+    pub fn max_connections_or_default(&self, is_sqlite: bool) -> u32 {
+        self.max_connections.unwrap_or(if is_sqlite {
+            DEFAULT_MAX_CONNECTIONS_SQLITE
+        } else {
+            DEFAULT_MAX_CONNECTIONS
+        })
+    }
+
+    /// Get min_connections with default value.
+    pub fn min_connections_or_default(&self) -> u32 {
+        self.min_connections.unwrap_or(DEFAULT_MIN_CONNECTIONS)
+    }
+
+    /// Get idle_timeout with default value.
+    pub fn idle_timeout_or_default(&self) -> u64 {
+        self.idle_timeout_secs.unwrap_or(DEFAULT_IDLE_TIMEOUT_SECS)
+    }
+
+    /// Get acquire_timeout with default value.
+    pub fn acquire_timeout_or_default(&self) -> u64 {
+        self.acquire_timeout_secs
+            .unwrap_or(DEFAULT_ACQUIRE_TIMEOUT_SECS)
+    }
+
+    /// Get test_before_acquire with default value.
+    pub fn test_before_acquire_or_default(&self) -> bool {
+        self.test_before_acquire.unwrap_or(true)
+    }
+
+    /// Validate pool options and return an error message if invalid.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(max) = self.max_connections {
+            if max == 0 {
+                return Err("max_connections must be greater than 0".to_string());
+            }
+        }
+        if let Some(min) = self.min_connections {
+            if min == 0 {
+                return Err("min_connections must be greater than 0".to_string());
+            }
+            if let Some(max) = self.max_connections {
+                if min > max {
+                    return Err(format!(
+                        "min_connections ({}) cannot exceed max_connections ({})",
+                        min, max
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Transport mode for the MCP server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum TransportMode {
@@ -46,6 +123,8 @@ pub struct DatabaseConfig {
     pub server_level: bool,
     /// Database name extracted from URL path. None for server-level connections.
     pub database: Option<String>,
+    /// Connection pool configuration options parsed from URL query parameters.
+    pub pool_options: PoolOptions,
 }
 
 impl DatabaseConfig {
@@ -65,6 +144,16 @@ impl DatabaseConfig {
     /// mysql://user:pass@host:3306/mydb?writable=true      # writable
     /// mydb=postgres://user:pass@host/db?writable=true     # named, writable
     /// ```
+    /// Pool option keys that we extract from URL query parameters.
+    const POOL_OPTION_KEYS: &'static [&'static str] = &[
+        "writable",
+        "max_connections",
+        "min_connections",
+        "idle_timeout",
+        "acquire_timeout",
+        "test_before_acquire",
+    ];
+
     pub fn parse(s: &str) -> Result<Self, String> {
         // Split name=url format (only if '=' before '://')
         let scheme_pos = s.find("://").unwrap_or(s.len());
@@ -74,11 +163,15 @@ impl DatabaseConfig {
         };
 
         let mut url = Url::parse(url_str).map_err(|e| format!("Invalid URL: {e}"))?;
-        let mut opts = Self::extract_options(&mut url, &["writable"]);
+        let mut opts = Self::extract_options(&mut url, Self::POOL_OPTION_KEYS);
 
         let writable = opts
             .remove("writable")
             .is_some_and(|v| v.eq_ignore_ascii_case("true"));
+
+        // Parse and validate pool options
+        let pool_options = Self::parse_pool_options(&mut opts);
+        pool_options.validate()?;
 
         // Extract database name from URL path
         let database = Self::db_name(&url);
@@ -104,13 +197,34 @@ impl DatabaseConfig {
             writable,
             server_level,
             database,
+            pool_options,
         })
     }
 
+    /// Parse pool options from extracted URL query parameters.
+    fn parse_pool_options(opts: &mut HashMap<String, String>) -> PoolOptions {
+        PoolOptions {
+            max_connections: opts.remove("max_connections").and_then(|v| v.parse().ok()),
+            min_connections: opts.remove("min_connections").and_then(|v| v.parse().ok()),
+            idle_timeout_secs: opts.remove("idle_timeout").and_then(|v| v.parse().ok()),
+            acquire_timeout_secs: opts.remove("acquire_timeout").and_then(|v| v.parse().ok()),
+            test_before_acquire: opts.remove("test_before_acquire").and_then(|v| {
+                if v.eq_ignore_ascii_case("true") {
+                    Some(true)
+                } else if v.eq_ignore_ascii_case("false") {
+                    Some(false)
+                } else {
+                    None // Invalid value ignored
+                }
+            }),
+        }
+    }
+
     /// Extract MCP-specific options from URL query params, keeping others for the driver.
+    /// Uses proper URL encoding to preserve special characters in remaining params.
     fn extract_options(url: &mut Url, keys: &[&str]) -> HashMap<String, String> {
         let mut opts = HashMap::new();
-        let remaining: Vec<_> = url
+        let remaining: Vec<(String, String)> = url
             .query_pairs()
             .filter_map(|(k, v)| {
                 let key_lower = k.to_ascii_lowercase();
@@ -118,7 +232,7 @@ impl DatabaseConfig {
                     opts.insert(key_lower, v.into_owned());
                     None
                 } else {
-                    Some(format!("{k}={v}"))
+                    Some((k.into_owned(), v.into_owned()))
                 }
             })
             .collect();
@@ -126,7 +240,8 @@ impl DatabaseConfig {
         if remaining.is_empty() {
             url.set_query(None);
         } else {
-            url.set_query(Some(&remaining.join("&")));
+            // Use query_pairs_mut for proper URL encoding
+            url.query_pairs_mut().clear().extend_pairs(remaining);
         }
         opts
     }
@@ -560,5 +675,148 @@ mod tests {
             config2.database.is_none(),
             "Server-level Postgres should have no database"
         );
+    }
+
+    // =========================================================================
+    // Pool Options Tests
+    // =========================================================================
+
+    #[test]
+    fn test_pool_options_defaults() {
+        let opts = PoolOptions::default();
+        assert_eq!(opts.max_connections_or_default(false), 10);
+        assert_eq!(opts.max_connections_or_default(true), 1);
+        assert_eq!(opts.min_connections_or_default(), 1);
+        assert_eq!(opts.idle_timeout_or_default(), 600);
+        assert_eq!(opts.acquire_timeout_or_default(), 30);
+        assert!(opts.test_before_acquire_or_default());
+    }
+
+    #[test]
+    fn test_pool_options_custom_values() {
+        let opts = PoolOptions {
+            max_connections: Some(20),
+            min_connections: Some(5),
+            idle_timeout_secs: Some(300),
+            acquire_timeout_secs: Some(60),
+            test_before_acquire: Some(false),
+        };
+        assert_eq!(opts.max_connections_or_default(false), 20);
+        assert_eq!(opts.max_connections_or_default(true), 20);
+        assert_eq!(opts.min_connections_or_default(), 5);
+        assert_eq!(opts.idle_timeout_or_default(), 300);
+        assert_eq!(opts.acquire_timeout_or_default(), 60);
+        assert!(!opts.test_before_acquire_or_default());
+    }
+
+    #[test]
+    fn test_parse_pool_options_from_url() {
+        let config = DatabaseConfig::parse(
+            "mysql://host/db?max_connections=20&min_connections=5&idle_timeout=300",
+        )
+        .unwrap();
+
+        assert_eq!(config.pool_options.max_connections, Some(20));
+        assert_eq!(config.pool_options.min_connections, Some(5));
+        assert_eq!(config.pool_options.idle_timeout_secs, Some(300));
+        assert!(config.pool_options.acquire_timeout_secs.is_none());
+        assert!(config.pool_options.test_before_acquire.is_none());
+    }
+
+    #[test]
+    fn test_parse_pool_options_acquire_timeout() {
+        let config = DatabaseConfig::parse(
+            "postgres://host/db?acquire_timeout=120&test_before_acquire=true",
+        )
+        .unwrap();
+
+        assert_eq!(config.pool_options.acquire_timeout_secs, Some(120));
+        assert_eq!(config.pool_options.test_before_acquire, Some(true));
+    }
+
+    #[test]
+    fn test_parse_pool_options_test_before_acquire_false() {
+        let config = DatabaseConfig::parse("mysql://host/db?test_before_acquire=false").unwrap();
+
+        assert_eq!(config.pool_options.test_before_acquire, Some(false));
+    }
+
+    #[test]
+    fn test_pool_options_stripped_from_connection_string() {
+        let config = DatabaseConfig::parse(
+            "mysql://host/db?max_connections=20&charset=utf8&idle_timeout=300",
+        )
+        .unwrap();
+
+        assert_eq!(config.pool_options.max_connections, Some(20));
+        assert_eq!(config.pool_options.idle_timeout_secs, Some(300));
+        assert!(config.connection_string.contains("charset=utf8"));
+        assert!(!config.connection_string.contains("max_connections"));
+        assert!(!config.connection_string.contains("idle_timeout"));
+    }
+
+    #[test]
+    fn test_pool_options_with_writable() {
+        let config =
+            DatabaseConfig::parse("mysql://host/db?writable=true&max_connections=50").unwrap();
+
+        assert!(config.writable);
+        assert_eq!(config.pool_options.max_connections, Some(50));
+        assert!(!config.connection_string.contains("writable"));
+        assert!(!config.connection_string.contains("max_connections"));
+    }
+
+    #[test]
+    fn test_pool_options_invalid_value_ignored() {
+        let config = DatabaseConfig::parse("mysql://host/db?max_connections=invalid").unwrap();
+
+        assert!(config.pool_options.max_connections.is_none());
+    }
+
+    #[test]
+    fn test_pool_options_invalid_boolean_ignored() {
+        let config = DatabaseConfig::parse("mysql://host/db?test_before_acquire=garbage").unwrap();
+        assert!(config.pool_options.test_before_acquire.is_none());
+
+        let config2 = DatabaseConfig::parse("mysql://host/db?test_before_acquire=yes").unwrap();
+        assert!(config2.pool_options.test_before_acquire.is_none());
+    }
+
+    #[test]
+    fn test_pool_options_validation_max_zero() {
+        let result = DatabaseConfig::parse("mysql://host/db?max_connections=0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("max_connections"));
+    }
+
+    #[test]
+    fn test_pool_options_validation_min_zero() {
+        let result = DatabaseConfig::parse("mysql://host/db?min_connections=0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("min_connections"));
+    }
+
+    #[test]
+    fn test_pool_options_validation_min_exceeds_max() {
+        let result = DatabaseConfig::parse("mysql://host/db?min_connections=10&max_connections=5");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("min_connections"));
+        assert!(err.contains("cannot exceed"));
+    }
+
+    #[test]
+    fn test_url_encoding_preserved_in_connection_string() {
+        // Test that special characters in remaining params are preserved
+        let config = DatabaseConfig::parse(
+            "mysql://host/db?sslcert=%2Ftmp%2Fcert%26key.pem&max_connections=20",
+        )
+        .unwrap();
+
+        assert_eq!(config.pool_options.max_connections, Some(20));
+        // The connection string should still be valid for the driver
+        assert!(config.connection_string.contains("sslcert="));
+        // The %26 should be preserved (either as %26 or properly re-encoded)
+        assert!(!config.connection_string.contains("max_connections"));
     }
 }

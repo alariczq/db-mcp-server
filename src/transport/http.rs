@@ -16,6 +16,11 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use tracing::{error, info, warn};
 
+/// Default query timeout in seconds.
+const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 30;
+/// Default row limit for queries.
+const DEFAULT_ROW_LIMIT: u32 = 100;
+
 /// HTTP transport implementation with Streamable HTTP support.
 ///
 /// This transport provides:
@@ -28,6 +33,8 @@ pub struct HttpTransport {
     host: String,
     port: u16,
     endpoint: String,
+    query_timeout_secs: u64,
+    row_limit: u32,
 }
 
 impl HttpTransport {
@@ -53,6 +60,29 @@ impl HttpTransport {
             host: host.into(),
             port,
             endpoint: endpoint.into(),
+            query_timeout_secs: DEFAULT_QUERY_TIMEOUT_SECS,
+            row_limit: DEFAULT_ROW_LIMIT,
+        }
+    }
+
+    /// Create a new HTTP transport with custom configuration.
+    pub fn with_config(
+        connection_manager: Arc<ConnectionManager>,
+        transaction_registry: Arc<TransactionRegistry>,
+        host: impl Into<String>,
+        port: u16,
+        endpoint: impl Into<String>,
+        query_timeout_secs: u64,
+        row_limit: u32,
+    ) -> Self {
+        Self {
+            connection_manager,
+            transaction_registry,
+            host: host.into(),
+            port,
+            endpoint: endpoint.into(),
+            query_timeout_secs,
+            row_limit,
         }
     }
 
@@ -74,12 +104,16 @@ impl Transport for HttpTransport {
 
         let connection_manager = self.connection_manager.clone();
         let transaction_registry = self.transaction_registry.clone();
+        let query_timeout_secs = self.query_timeout_secs;
+        let row_limit = self.row_limit;
 
         let service = StreamableHttpService::new(
             move || {
-                Ok(DbService::new(
+                Ok(DbService::with_config(
                     connection_manager.clone(),
                     transaction_registry.clone(),
+                    query_timeout_secs,
+                    row_limit,
                 ))
             },
             LocalSessionManager::default().into(),

@@ -1,5 +1,6 @@
 //! Integration tests for the list_transactions tool.
 
+use db_mcp_server::config::PoolOptions;
 use db_mcp_server::db::{ConnectionManager, TransactionRegistry};
 use db_mcp_server::models::ConnectionConfig;
 use db_mcp_server::tools::{
@@ -11,18 +12,30 @@ use tempfile::NamedTempFile;
 
 /// Create a test SQLite database and return the connection manager with it configured.
 async fn create_test_connection_manager() -> (Arc<ConnectionManager>, String, NamedTempFile) {
+    create_test_connection_manager_with_pool_size(5).await
+}
+
+/// Create a test SQLite database with custom max connections.
+async fn create_test_connection_manager_with_pool_size(
+    max_connections: u32,
+) -> (Arc<ConnectionManager>, String, NamedTempFile) {
     let temp_file = NamedTempFile::new().expect("Failed to create temp file");
     let db_path = temp_file.path().to_str().unwrap();
     let connection_id = "test_db";
     let url = format!("sqlite:{}?mode=rwc", db_path);
 
     let manager = Arc::new(ConnectionManager::new());
+    let pool_options = PoolOptions {
+        max_connections: Some(max_connections),
+        ..Default::default()
+    };
     let config = ConnectionConfig::new(
         connection_id,
         &url,
         true,  // writable
         false, // not server_level
         None,
+        pool_options,
     )
     .expect("Failed to create config");
     manager

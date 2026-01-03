@@ -152,11 +152,14 @@ fn process_rows<R: RowToJson>(
             rows: Vec::new(),
             rows_affected: None,
             execution_time_ms,
+            truncated: Some(false),
+            has_more: Some(false),
         });
     }
 
     let columns = rows[0].get_column_names();
     let total_rows = rows.len();
+    let has_more = total_rows > row_limit as usize;
     let rows_to_take = (row_limit as usize).min(total_rows);
 
     let json_rows: Vec<serde_json::Map<String, serde_json::Value>> = rows
@@ -165,7 +168,7 @@ fn process_rows<R: RowToJson>(
         .map(|r| r.to_json_map_with_options(decode_binary))
         .collect();
 
-    if total_rows > row_limit as usize {
+    if has_more {
         warn!(
             total_rows = total_rows,
             limit = row_limit,
@@ -178,6 +181,8 @@ fn process_rows<R: RowToJson>(
         rows: json_rows,
         rows_affected: None,
         execution_time_ms,
+        truncated: Some(has_more),
+        has_more: Some(has_more),
     })
 }
 
