@@ -34,7 +34,7 @@ sqlx = { version = "0.8", features = [
 ] }
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "net"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -81,3 +81,5 @@ path = "src/lib.rs"
 lto = true
 codegen-units = 1
 strip = true
+panic = "abort"
+opt-level = "z"

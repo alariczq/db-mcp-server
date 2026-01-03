@@ -56,14 +56,12 @@ pub struct ExplainOutput {
     pub execution_time_ms: u64,
 }
 
-/// Handler for the explain tool.
 pub struct ExplainToolHandler {
     connection_manager: Arc<ConnectionManager>,
     transaction_registry: Arc<TransactionRegistry>,
 }
 
 impl ExplainToolHandler {
-    /// Create a new explain tool handler.
     pub fn new(
         connection_manager: Arc<ConnectionManager>,
         transaction_registry: Arc<TransactionRegistry>,
@@ -74,14 +72,11 @@ impl ExplainToolHandler {
         }
     }
 
-    /// Generate the EXPLAIN SQL statement for the given database type and SQL.
-    ///
-    /// - MySQL/PostgreSQL: `EXPLAIN <sql>`
-    /// - SQLite: `EXPLAIN QUERY PLAN <sql>` for SELECT, `EXPLAIN <sql>` for others
+    /// SQLite uses EXPLAIN QUERY PLAN for SELECT, EXPLAIN for writes.
+    /// MySQL/PostgreSQL use EXPLAIN directly.
     fn generate_explain_sql(pool: &DbPool, sql: &str) -> String {
         match pool {
             DbPool::SQLite(_) => {
-                // SQLite: Use EXPLAIN QUERY PLAN for SELECT, EXPLAIN for writes
                 let trimmed = sql.trim_start().to_uppercase();
                 if trimmed.starts_with("SELECT") {
                     format!("EXPLAIN QUERY PLAN {}", sql)
@@ -90,13 +85,11 @@ impl ExplainToolHandler {
                 }
             }
             DbPool::MySql(_) | DbPool::Postgres(_) => {
-                // MySQL and PostgreSQL use EXPLAIN directly
                 format!("EXPLAIN {}", sql)
             }
         }
     }
 
-    /// Build ExplainOutput with appropriate formatting based on OutputFormat.
     fn build_output(
         rows: Vec<serde_json::Map<String, serde_json::Value>>,
         sql: &str,
@@ -111,7 +104,6 @@ impl ExplainToolHandler {
                 execution_time_ms,
             },
             OutputFormat::Table | OutputFormat::Markdown => {
-                // Extract column names from first row (or use empty if no rows)
                 let columns: Vec<ColumnInfo> = if let Some(first_row) = rows.first() {
                     first_row.keys().map(ColumnInfo::new).collect()
                 } else {
@@ -121,9 +113,9 @@ impl ExplainToolHandler {
                 let row_count = rows.len();
                 let formatted = match format {
                     OutputFormat::Table => {
-                        format_as_table(&columns, &rows, false, execution_time_ms)
+                        format_as_table(&columns, &rows, row_count, execution_time_ms)
                     }
-                    OutputFormat::Markdown => format_as_markdown(&columns, &rows, false, row_count),
+                    OutputFormat::Markdown => format_as_markdown(&columns, &rows, row_count),
                     _ => unreachable!(),
                 };
 
@@ -137,36 +129,27 @@ impl ExplainToolHandler {
         }
     }
 
-    /// Handle the explain tool call.
     pub async fn explain(&self, input: ExplainInput) -> DbResult<ExplainOutput> {
         let start = Instant::now();
-
-        // Validate SQL is not empty
         let sql = input.sql.trim();
         if sql.is_empty() {
             return Err(DbError::invalid_input("SQL statement is required"));
         }
 
-        // Calculate timeout
         let timeout_secs = input
             .timeout_secs
             .map(|t| t.min(MAX_EXPLAIN_TIMEOUT_SECS))
             .unwrap_or(DEFAULT_EXPLAIN_TIMEOUT_SECS);
         let timeout = Duration::from_secs(timeout_secs as u64);
-
-        // Convert params
         let params: Vec<QueryParam> = input.params.into_iter().map(Into::into).collect();
 
         let format = input.format;
 
-        // Check if we're running in a transaction
         if let Some(ref tx_id) = input.transaction_id {
-            // Validate transaction exists and belongs to this connection
             self.transaction_registry
                 .is_valid(tx_id, &input.connection_id)
                 .await?;
 
-            // Execute EXPLAIN within the transaction
             let pool = self
                 .connection_manager
                 .get_pool(&input.connection_id)
@@ -186,7 +169,6 @@ impl ExplainToolHandler {
             ));
         }
 
-        // Get the pool and execute EXPLAIN
         let pool = self
             .connection_manager
             .get_pool(&input.connection_id)
@@ -205,7 +187,6 @@ impl ExplainToolHandler {
         ))
     }
 
-    /// Execute the EXPLAIN query and return the result rows.
     async fn execute_explain(
         &self,
         pool: &DbPool,

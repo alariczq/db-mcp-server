@@ -25,15 +25,9 @@ pub const MAX_TRANSACTION_TIMEOUT_SECS: u32 = 300;
 const CLEANUP_INTERVAL_SECS: u64 = 5;
 
 /// Database-specific transaction wrapper.
-///
-/// This enum wraps database-specific transaction types to provide
-/// a unified interface for transaction management.
 pub enum DbTransaction {
-    /// MySQL transaction
     MySql(Transaction<'static, MySql>),
-    /// PostgreSQL transaction
     Postgres(Transaction<'static, Postgres>),
-    /// SQLite transaction
     SQLite(Transaction<'static, Sqlite>),
 }
 
@@ -83,24 +77,18 @@ impl ActiveTransaction {
 /// Metadata about an active transaction (for listing without consuming).
 #[derive(Debug, Clone)]
 pub struct TransactionMetadata {
-    /// Unique transaction identifier
     pub transaction_id: String,
-    /// Connection this transaction belongs to
     pub connection_id: String,
-    /// When the transaction started (absolute time)
     pub started_at: DateTime<Utc>,
-    /// Seconds since transaction started
     pub duration_secs: u64,
-    /// Configured timeout for this transaction
     pub timeout_secs: u32,
 }
 
 #[derive(Clone)]
 pub struct TransactionRegistry {
     transactions: Arc<RwLock<HashMap<String, ActiveTransaction>>>,
-    /// System start time for converting Instant to DateTime
+    // Used to convert Instant to DateTime<Utc>
     system_start_instant: Instant,
-    /// System start time as UTC DateTime
     system_start_datetime: DateTime<Utc>,
 }
 
@@ -115,15 +103,12 @@ impl TransactionRegistry {
     }
 
     /// List all active transactions with their metadata.
-    ///
-    /// This method returns metadata about all transactions without consuming them.
     pub async fn list_all(&self) -> Vec<TransactionMetadata> {
         let txs = self.transactions.read().await;
         txs.iter()
             .map(|(id, entry)| {
                 let duration = entry.created_at.elapsed();
                 let duration_secs = duration.as_secs();
-                // Convert Instant to DateTime by calculating offset from system start
                 let offset_from_start = entry.created_at.duration_since(self.system_start_instant);
                 let started_at = self.system_start_datetime + offset_from_start;
 
@@ -139,8 +124,6 @@ impl TransactionRegistry {
     }
 
     /// Start a background task to clean up expired transactions.
-    ///
-    /// This should be called once when the server starts.
     pub fn start_cleanup_task(self: Arc<Self>) {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
@@ -283,12 +266,6 @@ impl TransactionRegistry {
         Self::validate_entry(entry, connection_id, transaction_id)
     }
 
-    /// Validate a transaction entry's state.
-    ///
-    /// Checks that:
-    /// - The entry belongs to the specified connection
-    /// - The transaction has not expired
-    /// - The transaction is still active
     fn validate_entry(
         entry: &ActiveTransaction,
         connection_id: &str,
@@ -459,7 +436,6 @@ impl TransactionRegistry {
             .ok_or_else(|| DbError::transaction("Transaction not found", transaction_id))?;
 
         if entry.connection_id != connection_id {
-            // Put it back and error
             txs.insert(transaction_id.to_string(), entry);
             return Err(DbError::transaction(
                 "Transaction belongs to a different connection",
@@ -490,7 +466,6 @@ impl TransactionRegistry {
             .ok_or_else(|| DbError::transaction("Transaction not found", transaction_id))?;
 
         if entry.connection_id != connection_id {
-            // Put it back and error
             txs.insert(transaction_id.to_string(), entry);
             return Err(DbError::transaction(
                 "Transaction belongs to a different connection",
@@ -530,7 +505,6 @@ impl TransactionRegistry {
                         connection_id = %entry.connection_id,
                         "Rolling back expired transaction"
                     );
-                    // Best effort rollback - ignore errors
                     let _ = tx.rollback().await;
                 }
             }

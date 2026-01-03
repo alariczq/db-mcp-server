@@ -1,7 +1,4 @@
 //! Parameter binding utilities for database queries.
-//!
-//! This module provides functions to bind `QueryParam` values to database-specific
-//! query objects. These are used by transaction operations and explain functionality.
 
 use crate::models::QueryParam;
 use sqlx::mysql::MySqlArguments;
@@ -10,7 +7,6 @@ use sqlx::sqlite::SqliteArguments;
 use sqlx::types::Json;
 use sqlx::{MySql, Postgres, Sqlite};
 
-/// Bind a parameter to a MySQL query.
 pub(crate) fn bind_mysql_param<'q>(
     query: sqlx::query::Query<'q, MySql, MySqlArguments>,
     param: &'q QueryParam,
@@ -25,7 +21,6 @@ pub(crate) fn bind_mysql_param<'q>(
     }
 }
 
-/// Bind a parameter to a PostgreSQL query.
 pub(crate) fn bind_postgres_param<'q>(
     query: sqlx::query::Query<'q, Postgres, PgArguments>,
     param: &'q QueryParam,
@@ -40,7 +35,6 @@ pub(crate) fn bind_postgres_param<'q>(
     }
 }
 
-/// Bind a parameter to a SQLite query.
 pub(crate) fn bind_sqlite_param<'q>(
     query: sqlx::query::Query<'q, Sqlite, SqliteArguments<'q>>,
     param: &'q QueryParam,

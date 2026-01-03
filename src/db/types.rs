@@ -13,7 +13,6 @@
 //! database-specific handling where needed.
 
 use crate::db::DatabaseType;
-use crate::models::ColumnMetadata;
 use serde_json::Value as JsonValue;
 use sqlx::mysql::{MySqlRow, MySqlTypeInfo, MySqlValueRef};
 use sqlx::postgres::{PgRow, PgTypeInfo, PgValueRef};
@@ -24,7 +23,6 @@ use sqlx::{Column, Decode, Row, Type, TypeInfo};
 // Type Classification
 // =============================================================================
 
-/// Logical category for database column types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeCategory {
     Integer,
@@ -51,17 +49,14 @@ pub fn categorize_type(type_name: &str, db: DatabaseType) -> TypeCategory {
         return TypeCategory::Decimal;
     }
 
-    // Integer types
     if lower.contains("int") || lower.contains("serial") || lower.contains("tiny") {
         return TypeCategory::Integer;
     }
 
-    // Boolean
     if lower == "bool" || lower == "boolean" {
         return TypeCategory::Boolean;
     }
 
-    // Float types
     if lower.contains("float")
         || lower.contains("double")
         || lower == "real"
@@ -71,17 +66,14 @@ pub fn categorize_type(type_name: &str, db: DatabaseType) -> TypeCategory {
         return TypeCategory::Float;
     }
 
-    // JSON types
     if lower == "json" || lower == "jsonb" {
         return TypeCategory::Json;
     }
 
-    // UUID (PostgreSQL)
     if lower == "uuid" {
         return TypeCategory::Uuid;
     }
 
-    // Binary types
     if lower.contains("blob") || lower.contains("binary") || lower == "bytea" {
         return TypeCategory::Binary;
     }
@@ -94,8 +86,7 @@ pub fn categorize_type(type_name: &str, db: DatabaseType) -> TypeCategory {
 // Decimal Type Support
 // =============================================================================
 
-/// Wrapper type for raw DECIMAL/NUMERIC values as strings.
-/// This preserves the exact database representation.
+/// Wrapper to preserve exact DECIMAL/NUMERIC representation.
 #[derive(Debug)]
 pub struct RawDecimal(pub String);
 
@@ -139,10 +130,7 @@ impl<'r> Decode<'r, sqlx::Postgres> for RawDecimal {
 // Binary Encoding
 // =============================================================================
 
-/// Decode binary data to JSON value.
-///
-/// If `decode_binary` is true, attempts to decode as UTF-8 text first.
-/// Falls back to base64 encoding if not valid UTF-8 or if `decode_binary` is false.
+/// Decode binary data to JSON value (UTF-8 if decode_binary, otherwise base64).
 pub fn decode_binary_value(bytes: &[u8], decode_binary: bool) -> JsonValue {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
 
@@ -164,7 +152,7 @@ pub fn decode_binary_value(bytes: &[u8], decode_binary: bool) -> JsonValue {
 pub trait RowToJson {
     fn to_json_map(&self) -> serde_json::Map<String, JsonValue>;
     fn to_json_map_with_options(&self, decode_binary: bool) -> serde_json::Map<String, JsonValue>;
-    fn get_column_metadata(&self) -> Vec<ColumnMetadata>;
+    fn get_column_names(&self) -> Vec<String>;
 }
 
 impl RowToJson for MySqlRow {
@@ -185,17 +173,8 @@ impl RowToJson for MySqlRow {
             .collect()
     }
 
-    fn get_column_metadata(&self) -> Vec<ColumnMetadata> {
-        self.columns()
-            .iter()
-            .map(|col| {
-                ColumnMetadata::new(
-                    col.name(),
-                    col.type_info().name(),
-                    !col.type_info().is_null(),
-                )
-            })
-            .collect()
+    fn get_column_names(&self) -> Vec<String> {
+        self.columns().iter().map(|col| col.name().to_string()).collect()
     }
 }
 
@@ -217,17 +196,8 @@ impl RowToJson for PgRow {
             .collect()
     }
 
-    fn get_column_metadata(&self) -> Vec<ColumnMetadata> {
-        self.columns()
-            .iter()
-            .map(|col| {
-                ColumnMetadata::new(
-                    col.name(),
-                    col.type_info().name(),
-                    !col.type_info().is_null(),
-                )
-            })
-            .collect()
+    fn get_column_names(&self) -> Vec<String> {
+        self.columns().iter().map(|col| col.name().to_string()).collect()
     }
 }
 
@@ -249,17 +219,8 @@ impl RowToJson for SqliteRow {
             .collect()
     }
 
-    fn get_column_metadata(&self) -> Vec<ColumnMetadata> {
-        self.columns()
-            .iter()
-            .map(|col| {
-                ColumnMetadata::new(
-                    col.name(),
-                    col.type_info().name(),
-                    !col.type_info().is_null(),
-                )
-            })
-            .collect()
+    fn get_column_names(&self) -> Vec<String> {
+        self.columns().iter().map(|col| col.name().to_string()).collect()
     }
 }
 
@@ -300,11 +261,9 @@ mod mysql {
     }
 
     fn decode_integer(row: &MySqlRow, idx: usize) -> JsonValue {
-        // Check NULL first
         if let Ok(None) = row.try_get::<Option<i64>, _>(idx) {
             return JsonValue::Null;
         }
-        // Try signed types
         if let Ok(Some(v)) = row.try_get::<Option<i8>, _>(idx) {
             return JsonValue::Number(v.into());
         }
@@ -317,7 +276,6 @@ mod mysql {
         if let Ok(Some(v)) = row.try_get::<Option<i64>, _>(idx) {
             return JsonValue::Number(v.into());
         }
-        // Try unsigned types
         if let Ok(Some(v)) = row.try_get::<Option<u8>, _>(idx) {
             return JsonValue::Number(v.into());
         }
@@ -364,7 +322,6 @@ mod mysql {
     }
 
     fn decode_json_string(row: &MySqlRow, idx: usize) -> JsonValue {
-        // MySQL JSON type should be decoded as serde_json::Value directly
         row.try_get::<Option<serde_json::Value>, _>(idx)
             .ok()
             .flatten()
@@ -373,7 +330,6 @@ mod mysql {
 
     fn decode_text(row: &MySqlRow, idx: usize, type_name: &str) -> JsonValue {
         if let Ok(Some(v)) = row.try_get::<Option<String>, _>(idx) {
-            // Check if this might be JSON
             if type_name.to_lowercase().contains("json") {
                 if let Ok(json) = serde_json::from_str::<JsonValue>(&v) {
                     return json;
@@ -567,30 +523,21 @@ pub fn normalize_type_name(type_name: &str) -> String {
     let lower = type_name.to_lowercase();
 
     match lower.as_str() {
-        // Integers
         "int4" | "integer" | "int" => "integer".to_string(),
         "int8" | "bigint" | "bigserial" => "bigint".to_string(),
         "int2" | "smallint" => "smallint".to_string(),
         "tinyint" | "tiny" => "tinyint".to_string(),
-        // Text
         "varchar" | "character varying" | "text" | "string" => "text".to_string(),
         "char" | "character" | "bpchar" => "char".to_string(),
-        // Boolean
         "bool" | "boolean" => "boolean".to_string(),
-        // Float
         "float4" | "real" | "float" => "real".to_string(),
         "float8" | "double precision" | "double" => "double".to_string(),
-        // Binary
         "bytea" | "blob" | "binary" | "varbinary" => "binary".to_string(),
-        // Date/Time
         "timestamp" | "timestamptz" | "datetime" => "timestamp".to_string(),
         "date" => "date".to_string(),
         "time" | "timetz" => "time".to_string(),
-        // JSON
         "json" | "jsonb" => "json".to_string(),
-        // UUID
         "uuid" => "uuid".to_string(),
-        // Default
         _ => lower,
     }
 }

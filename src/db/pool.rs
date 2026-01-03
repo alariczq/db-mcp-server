@@ -28,34 +28,27 @@ const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
 /// Default idle timeout in seconds.
 const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
 
-/// Connection information returned by list_connections. Safe to expose - no secrets.
+/// Connection information returned by list_connections (no secrets exposed).
 #[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
 pub struct ConnectionSummary {
     /// Connection identifier. Use this value in connection_id parameter for all tool calls.
     pub id: String,
     /// Database type: "postgresql", "mysql", or "sqlite"
     pub db_type: DatabaseType,
-    /// If true, connection allows write operations (execute, begin_transaction). If false, only read operations allowed.
+    /// If true, connection allows write operations. If false, only read operations allowed.
     pub writable: bool,
     /// If true, connection is at server level (no database in URL). Requires schema parameter for list_tables/describe_table.
     pub server_level: bool,
-    /// Database name extracted from connection URL. Only present when a specific database
-    /// is targeted (omitted for server-level connections).
+    /// Database name from connection URL. Only present when a specific database is targeted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database: Option<String>,
 }
 
-/// Database-specific connection pool.
-///
-/// This enum wraps database-specific pools to provide full type support
-/// for each database backend, avoiding the limitations of AnyPool.
+/// Database-specific connection pool (avoids AnyPool limitations).
 #[derive(Debug, Clone)]
 pub enum DbPool {
-    /// MySQL connection pool
     MySql(MySqlPool),
-    /// PostgreSQL connection pool
     Postgres(PgPool),
-    /// SQLite connection pool
     SQLite(SqlitePool),
 }
 
@@ -115,7 +108,6 @@ impl ConnectionManager {
         let connection_id = config.id.clone();
         let db_type = config.db_type;
 
-        // Check if already connected
         {
             let pools = self.pools.read().await;
             if pools.contains_key(&connection_id) {
@@ -132,13 +124,9 @@ impl ConnectionManager {
             "Connecting to database"
         );
 
-        // Create the connection pool
         let pool = self.create_pool(&config).await?;
-
-        // Try to get server version
         let server_version = self.get_server_version(&pool).await;
 
-        // Store the pool
         let entry = PoolEntry {
             pool,
             config: config.clone(),
@@ -240,7 +228,6 @@ impl ConnectionManager {
     async fn create_pool(&self, config: &ConnectionConfig) -> DbResult<DbPool> {
         match config.db_type {
             DatabaseType::MySQL => {
-                // Parse connection options and set charset to utf8mb4 for proper Unicode support
                 let options = MySqlConnectOptions::from_str(&config.connection_string)
                     .map_err(|e| {
                         DbError::connection(

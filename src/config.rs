@@ -7,22 +7,11 @@ use std::collections::HashMap;
 use std::time::Duration;
 use url::Url;
 
-/// Default HTTP host.
 pub const DEFAULT_HTTP_HOST: &str = "127.0.0.1";
-
-/// Default HTTP port.
 pub const DEFAULT_HTTP_PORT: u16 = 8080;
-
-/// Default MCP endpoint path.
 pub const DEFAULT_MCP_ENDPOINT: &str = "/";
-
-/// Default query timeout in seconds.
 pub const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 30;
-
-/// Default connection timeout in seconds.
 pub const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 10;
-
-/// Default transaction timeout in seconds.
 pub const DEFAULT_TRANSACTION_TIMEOUT_SECS: u64 = 60;
 
 /// Transport mode for the MCP server.

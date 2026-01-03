@@ -21,21 +21,17 @@ pub enum OutputFormat {
     Markdown,
 }
 
-/// Column information for formatting.
 #[derive(Debug, Clone)]
 pub struct ColumnInfo {
-    /// Column name
     pub name: String,
 }
 
 impl ColumnInfo {
-    /// Create a new column info from a name.
     pub fn new(name: impl Into<String>) -> Self {
         Self { name: name.into() }
     }
 }
 
-/// Format value for display in table.
 pub fn format_value(value: &JsonValue) -> String {
     match value {
         JsonValue::Null => "NULL".to_string(),
@@ -47,20 +43,17 @@ pub fn format_value(value: &JsonValue) -> String {
     }
 }
 
-/// Format rows as ASCII table (MySQL CLI style).
 pub fn format_as_table(
     columns: &[ColumnInfo],
     rows: &[serde_json::Map<String, JsonValue>],
-    truncated: bool,
+    row_count: usize,
     execution_time_ms: u64,
 ) -> String {
     if columns.is_empty() {
         return "Empty set".to_string();
     }
 
-    // Calculate column widths
     let mut widths: Vec<usize> = columns.iter().map(|c| c.name.width()).collect();
-
     for row in rows {
         for (i, col) in columns.iter().enumerate() {
             if let Some(value) = row.get(&col.name) {
@@ -71,15 +64,12 @@ pub fn format_as_table(
     }
 
     let mut output = String::new();
-
-    // Build separator line
     let separator: String = widths
         .iter()
         .map(|w| format!("+{}", "-".repeat(w + 2)))
         .collect::<String>()
         + "+\n";
 
-    // Header
     output.push_str(&separator);
     let header: String = columns
         .iter()
@@ -90,7 +80,6 @@ pub fn format_as_table(
     output.push_str(&header);
     output.push_str(&separator);
 
-    // Rows
     for row in rows {
         let row_str: String = columns
             .iter()
@@ -98,7 +87,6 @@ pub fn format_as_table(
             .map(|(col, w)| {
                 let value = row.get(&col.name).cloned().unwrap_or(JsonValue::Null);
                 let formatted = format_value(&value);
-                // Right-align numbers, left-align others
                 if matches!(value, JsonValue::Number(_)) {
                     format!("| {:>width$} ", formatted, width = w)
                 } else {
@@ -112,25 +100,20 @@ pub fn format_as_table(
 
     output.push_str(&separator);
 
-    // Footer
-    let row_text = if rows.len() == 1 { "row" } else { "rows" };
-    let truncated_text = if truncated { " (truncated)" } else { "" };
+    let row_text = if row_count == 1 { "row" } else { "rows" };
     output.push_str(&format!(
-        "{} {} in set{} ({:.2} sec)\n",
-        rows.len(),
+        "{} {} in set ({:.2} sec)\n",
+        row_count,
         row_text,
-        truncated_text,
         execution_time_ms as f64 / 1000.0
     ));
 
     output
 }
 
-/// Format rows as Markdown table.
 pub fn format_as_markdown(
     columns: &[ColumnInfo],
     rows: &[serde_json::Map<String, JsonValue>],
-    truncated: bool,
     row_count: usize,
 ) -> String {
     if columns.is_empty() {
@@ -139,7 +122,6 @@ pub fn format_as_markdown(
 
     let mut output = String::new();
 
-    // Header row
     let header: String = columns
         .iter()
         .map(|c| format!("| {} ", c.name))
@@ -147,11 +129,9 @@ pub fn format_as_markdown(
         + "|\n";
     output.push_str(&header);
 
-    // Separator row
     let sep: String = columns.iter().map(|_| "|---").collect::<String>() + "|\n";
     output.push_str(&sep);
 
-    // Data rows
     for row in rows {
         let row_str: String = columns
             .iter()
@@ -164,9 +144,7 @@ pub fn format_as_markdown(
         output.push_str(&row_str);
     }
 
-    // Footer
-    let truncated_text = if truncated { " *(truncated)*" } else { "" };
-    output.push_str(&format!("\n*{} rows*{}", row_count, truncated_text));
+    output.push_str(&format!("\n*{} rows*", row_count));
 
     output
 }

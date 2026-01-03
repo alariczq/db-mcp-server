@@ -12,7 +12,7 @@ pub use connection::{
     TransactionState,
 };
 pub use query::{
-    ColumnMetadata, DEFAULT_QUERY_TIMEOUT_SECS, DEFAULT_ROW_LIMIT, ExecuteRequest, ExecuteResult,
+    DEFAULT_QUERY_TIMEOUT_SECS, DEFAULT_ROW_LIMIT, ExecuteRequest, ExecuteResult,
     MAX_QUERY_TIMEOUT_SECS, MAX_ROW_LIMIT, QueryParam, QueryParamInput, QueryRequest, QueryResult,
 };
 pub use schema::{

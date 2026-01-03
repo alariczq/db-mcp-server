@@ -25,15 +25,10 @@ pub const MAX_QUERY_TIMEOUT_SECS: u32 = 300;
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum QueryParamInput {
-    /// Null value
     Null,
-    /// Boolean value
     Bool(bool),
-    /// Integer value
     Int(i64),
-    /// Float value
     Float(f64),
-    /// String value
     String(String),
     /// JSON object or array value (for JSON columns)
     Json(serde_json::Value),
@@ -56,17 +51,11 @@ impl From<QueryParamInput> for QueryParam {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum QueryParam {
-    /// NULL value
     Null,
-    /// Boolean value
     Bool(bool),
-    /// Integer value (stored as i64 for maximum range)
     Int(i64),
-    /// Floating point value
     Float(f64),
-    /// String value
     String(String),
-    /// JSON value (for JSON columns)
     Json(serde_json::Value),
 }
 
@@ -157,31 +146,12 @@ impl QueryRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColumnMetadata {
-    pub name: String,
-    /// Database-specific type (e.g., "int8", "varchar", "TEXT")
-    pub type_name: String,
-    pub nullable: bool,
-}
-
-impl ColumnMetadata {
-    /// Create new column metadata.
-    pub fn new(name: impl Into<String>, type_name: impl Into<String>, nullable: bool) -> Self {
-        Self {
-            name: name.into(),
-            type_name: type_name.into(),
-            nullable,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResult {
-    pub columns: Vec<ColumnMetadata>,
+    /// Column names from the query result
+    pub columns: Vec<String>,
     pub rows: Vec<serde_json::Map<String, JsonValue>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rows_affected: Option<u64>,
-    pub truncated: bool,
     pub execution_time_ms: u64,
 }
 
@@ -192,7 +162,6 @@ impl QueryResult {
             columns: Vec::new(),
             rows: Vec::new(),
             rows_affected: None,
-            truncated: false,
             execution_time_ms,
         }
     }
@@ -203,7 +172,6 @@ impl QueryResult {
             columns: Vec::new(),
             rows: Vec::new(),
             rows_affected: Some(rows_affected),
-            truncated: false,
             execution_time_ms,
         }
     }

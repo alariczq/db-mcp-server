@@ -167,7 +167,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Execute a write operation (INSERT, UPDATE, DELETE).\nRequires read-write connection. Also supports DDL (CREATE, DROP, ALTER, TRUNCATE).\nCan run within a transaction using transaction_id. Returns warning for dangerous operations.\nFor server-level connections (no default database), use fully qualified table names (e.g., `db.table`) or run `USE database_name` first."
+        description = "Execute a write operation (INSERT, UPDATE, DELETE, DDL).\nRequires read-write connection (read_only: false).\nCan run within a transaction using transaction_id.\nDangerous operations return warning instead of executing: DROP, TRUNCATE, DELETE/UPDATE without WHERE.\nFor server-level connections, use `db.table` syntax or `USE database_name` first."
     )]
     async fn execute(
         &self,
@@ -298,25 +298,25 @@ impl ServerHandler for DbService {
                 2. Use the `connection_id` from step 1 in all other tool calls\n\
                 3. For write operations, ensure the connection is read-write (read_only: false)\n\
                 \n\
+                ## Transaction Workflow\n\
+                1. `begin_transaction` → returns transaction_id\n\
+                2. `query`/`execute` with transaction_id → operations within transaction\n\
+                3. `commit` or `rollback` with transaction_id → finalize\n\
+                \n\
+                ## Tools by Category\n\
+                - **Read-only**: query, list_tables, describe_table, list_databases, explain\n\
+                - **Write** (requires read_only: false): execute, begin_transaction, commit, rollback\n\
+                - **Utility**: list_connections, list_transactions\n\
+                \n\
                 ## Connection Types\n\
-                - **Read-only**: Can use `query`, `list_tables`, `describe_table`, `list_databases`\n\
-                - **Read-write**: Can also use `execute`, `begin_transaction`\n\
-                - **Server-level**: Connections without a database in the URL (e.g., mysql://host:3306)\n\
-                  require `schema` parameter for `list_tables` and `describe_table`\n\
+                - **Read-only**: read_only: true in list_connections output\n\
+                - **Read-write**: read_only: false, can use write tools\n\
+                - **Server-level**: server_level: true, no default database; requires `schema` parameter for list_tables/describe_table, or use `db.table` syntax in queries\n\
                 \n\
                 ## Database-Specific Notes\n\
-                - MySQL: `list_databases` works on any connection. Cross-database queries supported.\n\
-                - PostgreSQL: `list_databases` works, but queries cannot span databases.\n\
-                - SQLite: `list_databases` not supported (file-based; each file is a database).\n\
-                \n\
-                ## Error: Missing connection_id\n\
-                If you see \"connection_id is required\", call `list_connections` first.\n\
-                \n\
-                ## Server-Level Connections\n\
-                For connections without a default database (server_level: true in list_connections):\n\
-                - `query`: Use `db.table` syntax or `SHOW TABLES FROM db` instead of `SHOW TABLES`\n\
-                - `execute`: Use `db.table` syntax or run `USE database_name` first\n\
-                - `list_tables`/`describe_table`: Provide the `schema` parameter"
+                - MySQL: Cross-database queries supported (use `db.table` syntax)\n\
+                - PostgreSQL: Queries cannot span databases\n\
+                - SQLite: list_databases not supported (file-based)"
                     .to_string(),
             ),
         }

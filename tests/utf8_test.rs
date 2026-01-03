@@ -44,6 +44,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: true,
         })
         .await;
 
@@ -59,6 +60,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: false,
         })
         .await
         .expect("Failed to create table");
@@ -72,6 +74,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: false,
         })
         .await
         .expect("Failed to insert Chinese data");
@@ -121,6 +124,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: true,
         })
         .await;
 }
@@ -159,6 +163,7 @@ async fn test_mysql_table_comment_utf8() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: true,
         })
         .await;
 
@@ -172,6 +177,7 @@ async fn test_mysql_table_comment_utf8() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: false,
         })
         .await
         .expect("Failed to create table");
@@ -243,6 +249,7 @@ async fn test_mysql_table_comment_utf8() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: true,
         })
         .await;
 }

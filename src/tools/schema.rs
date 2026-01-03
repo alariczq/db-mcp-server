@@ -189,6 +189,7 @@ pub struct DescribeTableOutput {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
+#[schemars(inline)]
 pub struct ForeignKeyRef {
     pub table: String,
     pub column: String,
@@ -197,7 +198,7 @@ pub struct ForeignKeyRef {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ColumnOutput {
     pub name: String,
-    /// Full type (e.g., `varchar(30)`, `bigint unsigned`)
+    /// Full type (e.g., varchar(30), bigint unsigned)
     pub data_type: String,
     pub nullable: bool,
     /// Default value with appropriate JSON type (number for int, string for varchar, etc.)
@@ -209,7 +210,7 @@ pub struct ColumnOutput {
     pub character_set: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collation: Option<String>,
-    /// MySQL only (e.g., `auto_increment`)
+    /// MySQL only (e.g., auto_increment)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extra: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -285,7 +286,6 @@ impl From<TableSchema> for DescribeTableOutput {
     fn from(schema: TableSchema) -> Self {
         use std::collections::HashMap;
 
-        // Build FK lookup map: column_name -> ForeignKeyRef
         let fk_map: HashMap<String, ForeignKeyRef> = schema
             .foreign_keys
             .iter()
@@ -300,13 +300,11 @@ impl From<TableSchema> for DescribeTableOutput {
             })
             .collect();
 
-        // Convert columns with FK references attached
         let columns: Vec<ColumnOutput> = schema
             .columns
             .into_iter()
             .map(|col| {
                 let mut output: ColumnOutput = col.into();
-                // Attach FK reference if this column is a foreign key
                 output.foreign_key = fk_map.get(&output.name).cloned();
                 output
             })
@@ -323,25 +321,21 @@ impl From<TableSchema> for DescribeTableOutput {
     }
 }
 
-/// Handler for schema introspection tools.
 pub struct SchemaToolHandler {
     connection_manager: Arc<ConnectionManager>,
 }
 
 impl SchemaToolHandler {
-    /// Create a new schema tool handler.
     pub fn new(connection_manager: Arc<ConnectionManager>) -> Self {
         Self { connection_manager }
     }
 
-    /// Handle the list_tables tool call.
     pub async fn list_tables(&self, input: ListTablesInput) -> DbResult<ListTablesOutput> {
         let config = self
             .connection_manager
             .get_config(&input.connection_id)
             .await?;
 
-        // Server-level connections require a schema parameter to know which database to query
         if config.server_level && input.schema.is_none() {
             return Err(DbError::invalid_input(
                 "Server-level connections require a 'schema' parameter to specify which database to query. \
@@ -372,14 +366,12 @@ impl SchemaToolHandler {
         })
     }
 
-    /// Handle the describe_table tool call.
     pub async fn describe_table(&self, input: DescribeTableInput) -> DbResult<DescribeTableOutput> {
         let config = self
             .connection_manager
             .get_config(&input.connection_id)
             .await?;
 
-        // Server-level connections require a schema parameter to know which database to query
         if config.server_level && input.schema.is_none() {
             return Err(DbError::invalid_input(
                 "Server-level connections require a 'schema' parameter to specify which database to query. \
@@ -406,9 +398,7 @@ impl SchemaToolHandler {
         Ok(schema.into())
     }
 
-    /// Handle the list_databases tool call.
-    /// Supported for MySQL and PostgreSQL connections.
-    /// SQLite will return an error as it doesn't support listing databases.
+    /// SQLite returns an error as it doesn't support listing databases.
     pub async fn list_databases(&self, input: ListDatabasesInput) -> DbResult<ListDatabasesOutput> {
         let pool = self
             .connection_manager

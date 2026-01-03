@@ -9,11 +9,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
-    /// PostgreSQL database
     PostgreSQL,
-    /// MySQL/MariaDB database
+    /// Includes MariaDB
     MySQL,
-    /// SQLite database
     SQLite,
 }
 
@@ -60,7 +58,6 @@ impl std::fmt::Display for DatabaseType {
 /// Configuration for a database connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
-    /// Connection identifier.
     pub id: String,
     pub db_type: DatabaseType,
     /// Contains sensitive data - never log
@@ -146,7 +143,6 @@ pub enum ConnectionConfigError {
 /// Information about an active connection, returned after successful connection.
 #[derive(Debug, Clone, Serialize)]
 pub struct ConnectionInfo {
-    /// Connection identifier.
     pub connection_id: String,
     pub database_type: DatabaseType,
     pub server_version: Option<String>,
@@ -161,13 +157,10 @@ pub struct ConnectionInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransactionState {
-    /// Transaction is active and can accept operations
     Active,
-    /// Transaction has been committed
     Committed,
-    /// Transaction has been rolled back
     RolledBack,
-    /// Transaction timed out and was automatically rolled back
+    /// Automatically rolled back due to timeout
     TimedOut,
 }
 

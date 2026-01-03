@@ -25,11 +25,8 @@ use tracing::{error, info, warn};
 pub struct HttpTransport {
     connection_manager: Arc<ConnectionManager>,
     transaction_registry: Arc<TransactionRegistry>,
-    /// Host to bind to
     host: String,
-    /// Port to bind to
     port: u16,
-    /// MCP endpoint path
     endpoint: String,
 }
 
@@ -75,11 +72,9 @@ impl Transport for HttpTransport {
         let bind_addr = self.bind_addr();
         info!("Starting MCP server with HTTP transport on {}", bind_addr);
 
-        // Clone Arc references for the service factory closure
         let connection_manager = self.connection_manager.clone();
         let transaction_registry = self.transaction_registry.clone();
 
-        // Create the StreamableHttpService with a factory that creates DbService instances
         let service = StreamableHttpService::new(
             move || {
                 Ok(DbService::new(
@@ -91,15 +86,13 @@ impl Transport for HttpTransport {
             Default::default(),
         );
 
-        // Build the axum router with configurable endpoint
-        // Note: nest_service doesn't support root path "/", use fallback_service instead
+        // nest_service doesn't support root path "/", use fallback_service instead
         let app = if self.endpoint == "/" {
             axum::Router::new().fallback_service(service)
         } else {
             axum::Router::new().nest_service(&self.endpoint, service)
         };
 
-        // Create TCP listener
         let listener = TcpListener::bind(&bind_addr).await.map_err(|e| {
             crate::error::DbError::connection(
                 format!("Failed to bind to {}: {}", bind_addr, e),
@@ -113,18 +106,15 @@ impl Transport for HttpTransport {
         // so we force exit after a timeout once shutdown signal is received
         const GRACEFUL_TIMEOUT: Duration = Duration::from_secs(30);
 
-        // Use a notify to coordinate shutdown timing
         let shutdown_notify = Arc::new(tokio::sync::Notify::new());
         let shutdown_notify_clone = shutdown_notify.clone();
 
-        // Create shutdown signal that triggers on SIGINT or SIGTERM
         let shutdown_signal = async move {
             wait_for_signal().await;
             // Notify that shutdown was triggered
             shutdown_notify_clone.notify_one();
         };
 
-        // Start server with graceful shutdown
         let server = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal);
 
         // Race between: server completing normally vs forced timeout/second signal after shutdown
@@ -162,7 +152,6 @@ impl Transport for HttpTransport {
             }
         }
 
-        // Close database connections
         info!("Closing database connections");
         self.connection_manager.close_all().await;
 

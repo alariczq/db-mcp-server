@@ -11,8 +11,8 @@ pub enum DbError {
     #[error("Connection failed: {message}")]
     Connection { message: String, suggestion: String },
 
-    #[error("Query failed: {message}")]
-    Query {
+    #[error("Database error: {message}")]
+    Database {
         message: String,
         /// e.g., "42P01" for undefined table
         sql_state: Option<String>,
@@ -45,6 +45,11 @@ pub enum DbError {
 
     #[error("Internal error: {message}")]
     Internal { message: String },
+
+    #[error(
+        "Dangerous operation blocked: {operation}. {reason}. To proceed, set 'dangerous_operation_allowed' to true."
+    )]
+    DangerousOperationBlocked { operation: String, reason: String },
 }
 
 impl DbError {
@@ -56,13 +61,13 @@ impl DbError {
         }
     }
 
-    /// Create a query error with optional SQL state.
-    pub fn query(
+    /// Create a database error with optional SQL state.
+    pub fn database(
         message: impl Into<String>,
         sql_state: Option<String>,
         suggestion: impl Into<String>,
     ) -> Self {
-        Self::Query {
+        Self::Database {
             message: message.into(),
             sql_state,
             suggestion: suggestion.into(),
@@ -122,11 +127,22 @@ impl DbError {
         }
     }
 
+    /// Create a dangerous operation blocked error.
+    pub fn dangerous_operation_blocked(
+        operation: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::DangerousOperationBlocked {
+            operation: operation.into(),
+            reason: reason.into(),
+        }
+    }
+
     /// Get the suggestion for this error, if available.
     pub fn suggestion(&self) -> Option<&str> {
         match self {
             Self::Connection { suggestion, .. } => Some(suggestion),
-            Self::Query { suggestion, .. } => Some(suggestion),
+            Self::Database { suggestion, .. } => Some(suggestion),
             _ => None,
         }
     }
@@ -147,13 +163,13 @@ impl From<sqlx::Error> for DbError {
             ),
             sqlx::Error::Database(db_err) => {
                 let code = db_err.code().map(|c| c.to_string());
-                DbError::query(
+                DbError::database(
                     db_err.message(),
                     code,
                     "Check the SQL syntax and referenced objects",
                 )
             }
-            sqlx::Error::RowNotFound => DbError::query(
+            sqlx::Error::RowNotFound => DbError::database(
                 "No rows returned",
                 None,
                 "Verify the query conditions match existing data",
@@ -215,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_error_suggestion() {
-        let err = DbError::query(
+        let err = DbError::database(
             "Syntax error",
             Some("42601".to_string()),
             "Check SQL syntax",

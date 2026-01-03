@@ -120,14 +120,12 @@ pub struct ListTransactionsOutput {
     pub message: Option<String>,
 }
 
-/// Handler for transaction management tools.
 pub struct TransactionToolHandler {
     connection_manager: Arc<ConnectionManager>,
     transaction_registry: Arc<TransactionRegistry>,
 }
 
 impl TransactionToolHandler {
-    /// Create a new transaction tool handler.
     pub fn new(
         connection_manager: Arc<ConnectionManager>,
         transaction_registry: Arc<TransactionRegistry>,
@@ -138,12 +136,10 @@ impl TransactionToolHandler {
         }
     }
 
-    /// Handle the begin_transaction tool call.
     pub async fn begin_transaction(
         &self,
         input: BeginTransactionInput,
     ) -> DbResult<BeginTransactionOutput> {
-        // Check if connection exists and allows writes
         let is_writable = self
             .connection_manager
             .is_writable(&input.connection_id)
@@ -156,13 +152,11 @@ impl TransactionToolHandler {
             ));
         }
 
-        // Calculate effective timeout
         let timeout_secs = input
             .timeout_secs
             .map(|t| t.min(MAX_TRANSACTION_TIMEOUT_SECS))
             .unwrap_or(DEFAULT_TRANSACTION_TIMEOUT_SECS);
 
-        // Get the pool and start a transaction
         let pool = self
             .connection_manager
             .get_pool(&input.connection_id)
@@ -204,7 +198,6 @@ impl TransactionToolHandler {
         })
     }
 
-    /// Handle the commit tool call.
     pub async fn commit(&self, input: CommitInput) -> DbResult<CommitOutput> {
         self.transaction_registry
             .commit(&input.transaction_id, &input.connection_id)
@@ -223,7 +216,6 @@ impl TransactionToolHandler {
         })
     }
 
-    /// Handle the rollback tool call.
     pub async fn rollback(&self, input: RollbackInput) -> DbResult<RollbackOutput> {
         self.transaction_registry
             .rollback(&input.transaction_id, &input.connection_id)
@@ -242,18 +234,11 @@ impl TransactionToolHandler {
         })
     }
 
-    /// Handle the list_transactions tool call.
-    ///
-    /// Lists all active transactions with their metadata. Optionally filters
-    /// by connection_id if provided.
     pub async fn list_transactions(
         &self,
         input: ListTransactionsInput,
     ) -> DbResult<ListTransactionsOutput> {
-        // Get all active transactions
         let all_transactions = self.transaction_registry.list_all().await;
-
-        // Convert to TransactionInfo with is_long_running calculation
         let mut transactions: Vec<TransactionInfo> = all_transactions
             .into_iter()
             .map(|meta| TransactionInfo {
@@ -266,9 +251,7 @@ impl TransactionToolHandler {
             })
             .collect();
 
-        // Filter by connection_id if provided
         if let Some(ref filter_conn_id) = input.connection_id {
-            // Validate connection exists
             if !self.connection_manager.exists(filter_conn_id).await {
                 return Err(DbError::connection_not_found(filter_conn_id));
             }

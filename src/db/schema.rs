@@ -16,7 +16,6 @@ use crate::models::{
 };
 use tracing::debug;
 
-/// Database info returned from list_databases.
 #[derive(Debug, Clone)]
 pub struct DatabaseInfoRow {
     pub name: String,
@@ -78,7 +77,6 @@ impl SchemaInspector {
 
 mod queries {
     pub mod postgres {
-        /// List databases on the server.
         pub const LIST_DATABASES: &str = r#"
             SELECT
                 datname AS name,
@@ -91,7 +89,6 @@ mod queries {
             ORDER BY datname
             "#;
 
-        /// List tables with views - includes size breakdown and comments.
         pub const LIST_TABLES_WITH_VIEWS: &str = r#"
             SELECT
                 t.table_name,
@@ -119,7 +116,6 @@ mod queries {
             ORDER BY t.table_name
             "#;
 
-        /// List tables without views - includes size breakdown and comments.
         pub const LIST_TABLES_NO_VIEWS: &str = r#"
             SELECT
                 t.table_name,
@@ -206,10 +202,8 @@ mod queries {
     }
 
     pub mod mysql {
-        /// List databases on the server.
         pub const LIST_DATABASES: &str = r#"SHOW DATABASES"#;
 
-        /// List tables with views - includes engine, charset, collation, size breakdown, and comments.
         pub const LIST_TABLES_WITH_VIEWS: &str = r#"
             SELECT
                 CONVERT(TABLE_NAME USING utf8) AS TABLE_NAME,
@@ -229,7 +223,6 @@ mod queries {
             ORDER BY TABLE_NAME
             "#;
 
-        /// List tables without views - includes engine, charset, collation, size breakdown, and comments.
         pub const LIST_TABLES_NO_VIEWS: &str = r#"
             SELECT
                 CONVERT(TABLE_NAME USING utf8) AS TABLE_NAME,
@@ -343,7 +336,6 @@ mod postgres {
                     TableInfo::new(&name, TableType::parse(&type_str)).with_schema(schema_name);
 
                 if type_str == "BASE TABLE" {
-                    // Size breakdown (PostgreSQL supports data_size, index_size, total_size)
                     if let Ok(data_size) = row.try_get::<i64, _>("data_size") {
                         table = table.with_data_size(data_size as u64);
                     }
@@ -362,7 +354,6 @@ mod postgres {
                     }
                 }
 
-                // Table comment (available for both tables and views in PostgreSQL)
                 if let Ok(Some(comment)) = row.try_get::<Option<String>, _>("comment") {
                     if !comment.is_empty() {
                         table = table.with_comment(comment);
@@ -458,10 +449,8 @@ mod postgres {
             .iter()
             .map(|row| {
                 let name: String = row.get("column_name");
-                // Use format_type() for full type (e.g., "character varying(30)", "numeric(10,2)")
                 let column_type: String = row.get("column_type");
                 let nullable: String = row.get("is_nullable");
-                // Handle column_default carefully to preserve empty strings
                 let default_value: Option<String> = row.try_get("column_default").ok().flatten();
                 let is_pk: bool = row.get("is_primary_key");
                 let comment: Option<String> = row.get("column_comment");
@@ -470,18 +459,14 @@ mod postgres {
                 let mut col = ColumnDefinition::new(&name, &column_type, nullable == "YES")
                     .with_primary_key(is_pk);
 
-                // Preserve empty string defaults - they are valid values
-                // Use with_default_str to convert to appropriate JSON type
                 if let Some(ref def) = default_value {
                     col = col.with_default_str(def);
                 }
-                // Only set comment if non-empty
                 if let Some(ref c) = comment {
                     if !c.is_empty() {
                         col = col.with_comment(c);
                     }
                 }
-                // Only set collation if non-default (not null means custom collation)
                 if let Some(ref coll) = collation {
                     if !coll.is_empty() {
                         col = col.with_collation(coll);
@@ -542,7 +527,6 @@ mod postgres {
                         .with_unique(is_unique)
                         .with_primary(is_primary);
 
-                    // Add index algorithm (btree, hash, gist, gin, brin, spgist)
                     if let Some(ref algo) = index_algorithm {
                         if !algo.is_empty() {
                             idx = idx.with_algorithm(algo);
@@ -698,7 +682,6 @@ mod mysql {
                         table = table.with_row_count(count);
                     }
 
-                    // Timestamps
                     if let Ok(Some(created)) = row.try_get::<Option<NaiveDateTime>, _>("CREATED_AT")
                     {
                         table = table.with_created_at(created.and_utc());
@@ -708,7 +691,6 @@ mod mysql {
                         table = table.with_updated_at(updated.and_utc());
                     }
 
-                    // Table comment
                     if let Some(comment) = get_optional_string(row, "TABLE_COMMENT") {
                         if !comment.is_empty() {
                             table = table.with_comment(comment);
@@ -771,11 +753,8 @@ mod mysql {
             .iter()
             .map(|row| {
                 let name = get_string(row, "COLUMN_NAME");
-                // Use COLUMN_TYPE for full type (e.g., "varchar(30)", "bigint unsigned")
                 let column_type = get_string(row, "COLUMN_TYPE");
                 let nullable = get_string(row, "IS_NULLABLE");
-                // Handle COLUMN_DEFAULT carefully to preserve empty strings
-                // MySQL returns NULL for no default, and '' for empty string default
                 let default_value = get_optional_string(row, "COLUMN_DEFAULT");
                 let column_key = get_string(row, "COLUMN_KEY");
                 let extra = get_optional_string(row, "EXTRA");
@@ -787,30 +766,24 @@ mod mysql {
                 let mut col = ColumnDefinition::new(&name, &column_type, nullable == "YES")
                     .with_primary_key(is_pk);
 
-                // Preserve empty string defaults - they are valid values
-                // Use with_default_str to convert to appropriate JSON type
                 if let Some(ref def) = default_value {
                     col = col.with_default_str(def);
                 }
-                // Only set extra if non-empty
                 if let Some(ref e) = extra {
                     if !e.is_empty() {
                         col = col.with_extra(e);
                     }
                 }
-                // Only set character_set if present (string columns only)
                 if let Some(ref cs) = character_set {
                     if !cs.is_empty() {
                         col = col.with_character_set(cs);
                     }
                 }
-                // Only set collation if present
                 if let Some(ref coll) = collation {
                     if !coll.is_empty() {
                         col = col.with_collation(coll);
                     }
                 }
-                // Only set comment if non-empty
                 if let Some(ref c) = comment {
                     if !c.is_empty() {
                         col = col.with_comment(c);
@@ -868,7 +841,6 @@ mod mysql {
                     .with_unique(is_unique != 0 || is_primary)
                     .with_primary(is_primary);
 
-                // Add index algorithm (BTREE, HASH, FULLTEXT, SPATIAL)
                 if let Some(ref algo) = index_algorithm {
                     if !algo.is_empty() {
                         idx = idx.with_algorithm(algo);
@@ -899,8 +871,6 @@ mod sqlite {
             let type_str: String = row.get("type");
             let mut table = TableInfo::new(&name, TableType::parse(&type_str));
 
-            // SQLite only supports total_size (via dbstat), not separate data/index sizes
-            // No charset/collation/engine for SQLite (fixed UTF-8, single engine)
             if type_str == "table" {
                 if let Some(size) = fetch_table_size(pool, &name).await {
                     table = table.with_total_size(size);
@@ -962,7 +932,6 @@ mod sqlite {
                 let name: String = row.get("name");
                 let data_type: String = row.get("type");
                 let notnull: i32 = row.get("notnull");
-                // Handle dflt_value carefully to preserve empty strings
                 let default_value: Option<String> = row.try_get("dflt_value").ok().flatten();
                 let pk: i32 = row.get("pk");
                 let is_pk = pk > 0;
@@ -970,8 +939,6 @@ mod sqlite {
                 let mut col =
                     ColumnDefinition::new(&name, &data_type, notnull == 0).with_primary_key(is_pk);
 
-                // Preserve empty string defaults - they are valid values
-                // Use with_default_str to convert to appropriate JSON type
                 if let Some(ref def) = default_value {
                     col = col.with_default_str(def);
                 }

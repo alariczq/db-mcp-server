@@ -11,10 +11,12 @@
 //! - `list_transactions`: List all active transactions
 //! - `explain`: Show query execution plans
 //! - `sql_validator`: SQL statement validation for read-only enforcement
+//! - `guard`: Dangerous operation detection for execute tool
 //! - `format`: Shared output formatting utilities
 
 pub mod explain;
 pub mod format;
+pub mod guard;
 pub mod query;
 pub mod schema;
 pub mod sql_validator;

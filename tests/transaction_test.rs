@@ -50,6 +50,7 @@ async fn test_transaction_rollback() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: false,
         })
         .await;
 
@@ -65,6 +66,7 @@ async fn test_transaction_rollback() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: false,
         })
         .await;
 
@@ -88,6 +90,7 @@ async fn test_transaction_rollback() {
             params: vec![],
             timeout_secs: None,
             transaction_id: Some(tx_id.clone()),
+            dangerous_operation_allowed: false,
         })
         .await
         .expect("Failed to insert in transaction");
@@ -165,6 +168,7 @@ async fn test_transaction_commit() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: false,
         })
         .await;
 
@@ -187,6 +191,7 @@ async fn test_transaction_commit() {
             params: vec![],
             timeout_secs: None,
             transaction_id: Some(tx_id.clone()),
+            dangerous_operation_allowed: false,
         })
         .await
         .expect("Failed to insert in transaction");
@@ -226,6 +231,7 @@ async fn test_transaction_commit() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
+            dangerous_operation_allowed: false,
         })
         .await;
 }

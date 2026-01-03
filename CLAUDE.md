@@ -75,6 +75,54 @@ From project constitution (`.specify/memory/constitution.md`):
 - Functions should not exceed 50 lines
 - Use `Result` types for error handling
 
+### Comment Guidelines
+
+**Avoid trivial inline comments** that merely restate what the code already expresses clearly:
+
+```rust
+// BAD - these comments add no value:
+// Create the connection pool
+let pool = self.create_pool(&config).await?;
+
+// GOOD - no comment needed, code is self-explanatory:
+let pool = self.create_pool(&config).await?;
+```
+
+**Keep comments that explain WHY**, not WHAT:
+- Business logic rationale
+- Non-obvious behavior or edge cases
+- Database-specific quirks (e.g., `// SQLite's NUMERIC is actually a float`)
+- Important constraints or invariants
+
+**Doc comments (`///`) guidelines**:
+- **Required**: Public APIs (structs, enums, public functions) - but only at the type level
+- **Optional**: Private functions - only add if the function name doesn't convey its purpose
+- **Skip**: Simple private helpers like `fn decode_integer()`, `fn format_value()` - the name is enough
+- **Skip**: Enum variants and struct fields when the name is self-explanatory
+- **Add**: Complex functions that need to explain implementation details or non-obvious behavior
+
+```rust
+// BAD - redundant variant/field comments:
+pub enum DbPool {
+    /// MySQL connection pool
+    MySql(MySqlPool),
+    /// PostgreSQL connection pool
+    Postgres(PgPool),
+}
+
+// GOOD - no variant comments needed, names are clear:
+pub enum DbPool {
+    MySql(MySqlPool),
+    Postgres(PgPool),
+}
+
+// GOOD - doc comment explains non-obvious behavior:
+/// Generate EXPLAIN SQL with database-specific syntax.
+/// - SQLite: Uses `EXPLAIN QUERY PLAN` for SELECT, `EXPLAIN` for writes
+/// - MySQL/PostgreSQL: Uses `EXPLAIN` directly
+fn generate_explain_sql(pool: &DbPool, sql: &str) -> String { ... }
+```
+
 ## MCP Tools
 
 | Tool | Description |
@@ -88,3 +136,12 @@ From project constitution (`.specify/memory/constitution.md`):
 | `begin_transaction` | Start a transaction |
 | `commit` | Commit a transaction |
 | `rollback` | Rollback a transaction |
+
+## Active Technologies
+- Rust 2024 Edition (stable) + rmcp 0.12.0 (MCP framework), sqlx 0.8 (database), tokio (async runtime), schemars (JSON schema) (002-transaction-explain-tools)
+- N/A (uses existing connection pools) (002-transaction-explain-tools)
+- Rust 2024 Edition + sqlx 0.8, rmcp 0.12.0, schemars, serde (003-code-refactor)
+- N/A (refactoring only) (003-code-refactor)
+- Rust 2024 Edition (stable) + rmcp 0.12.0 (MCP framework), schemars (JSON Schema generation) (004-mcp-tool-descriptions)
+- N/A (documentation-only changes) (004-mcp-tool-descriptions)
+- Rust 2024 Edition (stable) + rmcp 0.12.0 (MCP framework), sqlparser 0.60 (SQL parsing), sqlx 0.8 (database), schemars 1.0 (JSON schema) (005-dangerous-operation-guard)

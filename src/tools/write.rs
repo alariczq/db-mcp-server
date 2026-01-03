@@ -6,11 +6,14 @@
 use crate::db::{ConnectionManager, QueryExecutor, TransactionRegistry};
 use crate::error::{DbError, DbResult};
 use crate::models::{QueryParam, QueryParamInput};
+use crate::tools::guard::{
+    DangerousOperationResult, ReadOnlyCheckResult, check_dangerous_sql, check_readonly_sql,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Input for the execute tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -28,6 +31,9 @@ pub struct ExecuteInput {
     /// Run within an existing transaction (from begin_transaction). Omit for auto-commit.
     #[serde(default)]
     pub transaction_id: Option<String>,
+    /// Set to true to allow dangerous operations: DROP, TRUNCATE, DELETE without WHERE, UPDATE without WHERE. These are blocked by default to prevent accidental data loss.
+    #[serde(default)]
+    pub dangerous_operation_allowed: bool,
 }
 
 /// Output from the execute tool.
@@ -37,12 +43,8 @@ pub struct ExecuteOutput {
     pub rows_affected: u64,
     /// Execution time in milliseconds
     pub execution_time_ms: u64,
-    /// Warning for dangerous operations (DROP, TRUNCATE, DELETE without WHERE)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
 }
 
-/// Handler for write operations.
 pub struct WriteToolHandler {
     connection_manager: Arc<ConnectionManager>,
     transaction_registry: Arc<TransactionRegistry>,
@@ -50,7 +52,6 @@ pub struct WriteToolHandler {
 }
 
 impl WriteToolHandler {
-    /// Create a new write tool handler.
     pub fn new(
         connection_manager: Arc<ConnectionManager>,
         transaction_registry: Arc<TransactionRegistry>,
@@ -62,9 +63,7 @@ impl WriteToolHandler {
         }
     }
 
-    /// Handle the execute tool call.
     pub async fn execute(&self, input: ExecuteInput) -> DbResult<ExecuteOutput> {
-        // Check if connection allows writes
         let is_writable = self
             .connection_manager
             .is_writable(&input.connection_id)
@@ -77,13 +76,23 @@ impl WriteToolHandler {
             ));
         }
 
-        // Check for potentially dangerous operations
-        let warning = self.check_dangerous_operation(&input.sql);
+        if let ReadOnlyCheckResult::ReadOnlyOperation = check_readonly_sql(&input.sql)? {
+            return Err(DbError::invalid_input(
+                "This is a read-only operation (SELECT, SHOW, DESCRIBE, etc.). Use the 'query' tool instead of 'execute' for read operations.",
+            ));
+        }
 
-        // Convert params
+        if let DangerousOperationResult::Dangerous(op_type) = check_dangerous_sql(&input.sql)? {
+            if !input.dangerous_operation_allowed {
+                return Err(DbError::dangerous_operation_blocked(
+                    op_type.operation_name(),
+                    op_type.reason(),
+                ));
+            }
+        }
+
         let params: Vec<QueryParam> = input.params.into_iter().map(Into::into).collect();
 
-        // If transaction_id is provided, execute within that transaction
         if let Some(ref tx_id) = input.transaction_id {
             let start = std::time::Instant::now();
             let rows_affected = self
@@ -103,20 +112,14 @@ impl WriteToolHandler {
             return Ok(ExecuteOutput {
                 rows_affected,
                 execution_time_ms,
-                warning,
             });
         }
 
-        // Get the connection pool for non-transactional execution
         let pool = self
             .connection_manager
             .get_pool(&input.connection_id)
             .await?;
-
-        // Calculate timeout
         let timeout = input.timeout_secs.map(|t| Duration::from_secs(t as u64));
-
-        // Execute the operation
         let (rows_affected, execution_time_ms) = self
             .executor
             .execute_write(&pool, &input.sql, &params, timeout)
@@ -132,40 +135,7 @@ impl WriteToolHandler {
         Ok(ExecuteOutput {
             rows_affected,
             execution_time_ms,
-            warning,
         })
-    }
-
-    /// Check for potentially dangerous operations and return a warning if needed.
-    fn check_dangerous_operation(&self, sql: &str) -> Option<String> {
-        let sql_upper = sql.to_uppercase();
-        let sql_trimmed = sql_upper.trim();
-
-        // Check for DELETE without WHERE
-        if sql_trimmed.starts_with("DELETE") && !sql_upper.contains("WHERE") {
-            warn!("DELETE without WHERE clause detected");
-            return Some("Warning: DELETE without WHERE clause will affect all rows".to_string());
-        }
-
-        // Check for UPDATE without WHERE
-        if sql_trimmed.starts_with("UPDATE") && !sql_upper.contains("WHERE") {
-            warn!("UPDATE without WHERE clause detected");
-            return Some("Warning: UPDATE without WHERE clause will affect all rows".to_string());
-        }
-
-        // Check for TRUNCATE
-        if sql_trimmed.starts_with("TRUNCATE") {
-            warn!("TRUNCATE operation detected");
-            return Some("Warning: TRUNCATE will remove all rows from the table".to_string());
-        }
-
-        // Check for DROP
-        if sql_trimmed.starts_with("DROP") {
-            warn!("DROP operation detected");
-            return Some("Warning: DROP will permanently delete the database object".to_string());
-        }
-
-        None
     }
 }
 
@@ -184,6 +154,7 @@ mod tests {
         assert_eq!(input.connection_id, "conn1");
         assert!(input.params.is_empty());
         assert!(input.timeout_secs.is_none());
+        assert!(!input.dangerous_operation_allowed);
     }
 
     #[test]
@@ -201,39 +172,15 @@ mod tests {
     }
 
     #[test]
-    fn test_dangerous_operation_detection() {
-        let manager = Arc::new(ConnectionManager::new());
-        let registry = Arc::new(TransactionRegistry::new());
-        let handler = WriteToolHandler::new(manager, registry);
+    fn test_execute_input_with_dangerous_allowed() {
+        let json = r#"{
+            "connection_id": "conn1",
+            "sql": "DROP TABLE users",
+            "dangerous_operation_allowed": true
+        }"#;
 
-        // DELETE without WHERE
-        let warning = handler.check_dangerous_operation("DELETE FROM users");
-        assert!(warning.is_some());
-        assert!(warning.unwrap().contains("DELETE without WHERE"));
-
-        // DELETE with WHERE is fine
-        let warning = handler.check_dangerous_operation("DELETE FROM users WHERE id = 1");
-        assert!(warning.is_none());
-
-        // UPDATE without WHERE
-        let warning = handler.check_dangerous_operation("UPDATE users SET active = false");
-        assert!(warning.is_some());
-        assert!(warning.unwrap().contains("UPDATE without WHERE"));
-
-        // TRUNCATE
-        let warning = handler.check_dangerous_operation("TRUNCATE TABLE users");
-        assert!(warning.is_some());
-        assert!(warning.unwrap().contains("TRUNCATE"));
-
-        // DROP
-        let warning = handler.check_dangerous_operation("DROP TABLE users");
-        assert!(warning.is_some());
-        assert!(warning.unwrap().contains("DROP"));
-
-        // Normal INSERT is fine
-        let warning =
-            handler.check_dangerous_operation("INSERT INTO users (name) VALUES ('Alice')");
-        assert!(warning.is_none());
+        let input: ExecuteInput = serde_json::from_str(json).unwrap();
+        assert!(input.dangerous_operation_allowed);
     }
 
     #[test]
@@ -241,11 +188,12 @@ mod tests {
         let output = ExecuteOutput {
             rows_affected: 5,
             execution_time_ms: 15,
-            warning: Some("Test warning".to_string()),
         };
 
         let json = serde_json::to_string(&output).unwrap();
         assert!(json.contains("\"rows_affected\":5"));
-        assert!(json.contains("\"warning\":"));
+        assert!(json.contains("\"execution_time_ms\":15"));
+        // Ensure warning field is not present
+        assert!(!json.contains("warning"));
     }
 }

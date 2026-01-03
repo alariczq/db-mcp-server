@@ -57,7 +57,7 @@ impl QueryExecutor {
         request: &QueryRequest,
     ) -> DbResult<QueryResult> {
         let start = Instant::now();
-        // Ensure limit is at least 1 to avoid edge cases where limit=0 causes all results to be "truncated"
+        // Clamp limit to [1, MAX_ROW_LIMIT] to avoid edge case where limit=0 marks all results as "truncated"
         let row_limit = request
             .limit
             .map(|l| l.clamp(1, MAX_ROW_LIMIT))
@@ -151,19 +151,13 @@ fn process_rows<R: RowToJson>(
             columns: Vec::new(),
             rows: Vec::new(),
             rows_affected: None,
-            truncated: false,
             execution_time_ms,
         });
     }
 
-    let columns = rows[0].get_column_metadata();
+    let columns = rows[0].get_column_names();
     let total_rows = rows.len();
-    let truncated = total_rows > row_limit as usize;
-    let rows_to_take = if truncated {
-        row_limit as usize
-    } else {
-        total_rows
-    };
+    let rows_to_take = (row_limit as usize).min(total_rows);
 
     let json_rows: Vec<serde_json::Map<String, serde_json::Value>> = rows
         .iter()
@@ -171,7 +165,7 @@ fn process_rows<R: RowToJson>(
         .map(|r| r.to_json_map_with_options(decode_binary))
         .collect();
 
-    if truncated {
+    if total_rows > row_limit as usize {
         warn!(
             total_rows = total_rows,
             limit = row_limit,
@@ -183,7 +177,6 @@ fn process_rows<R: RowToJson>(
         columns,
         rows: json_rows,
         rows_affected: None,
-        truncated,
         execution_time_ms,
     })
 }

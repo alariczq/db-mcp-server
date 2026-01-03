@@ -43,13 +43,11 @@ impl Transport for StdioTransport {
     async fn run(&self) -> DbResult<()> {
         info!("Starting MCP server with stdio transport");
 
-        // Create the DbService
         let service = DbService::new(
             self.connection_manager.clone(),
             self.transaction_registry.clone(),
         );
 
-        // Create the stdio transport and run the service
         let transport = stdio();
         let running_service = service.serve(transport).await.map_err(|e| {
             crate::error::DbError::internal(format!("Failed to start stdio transport: {}", e))
@@ -86,8 +84,6 @@ impl Transport for StdioTransport {
             });
         }
 
-        // Close all database connections on shutdown
-        info!("Closing all database connections");
         self.connection_manager.close_all().await;
 
         if shutdown_requested {

@@ -30,10 +30,7 @@ fn init_tracing(config: &Config) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse configuration from command line and environment
     let config = Config::parse();
-
-    // Initialize logging
     init_tracing(&config);
 
     // Require at least one database to be configured
@@ -62,14 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION")
     );
 
-    // Create shared connection manager and transaction registry
     let connection_manager = Arc::new(ConnectionManager::new());
     let transaction_registry = Arc::new(TransactionRegistry::new());
-
-    // Start the cleanup task for expired transactions
     TransactionRegistry::start_cleanup_task(transaction_registry.clone());
 
-    // Connect to all configured databases at startup
     let db_configs = config.parse_databases()?;
     info!(
         count = db_configs.len(),
@@ -99,7 +92,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         connection_manager.connect(conn_config).await?;
     }
 
-    // Run the appropriate transport
     let result = match config.transport {
         TransportMode::Stdio => {
             info!("Using stdio transport");

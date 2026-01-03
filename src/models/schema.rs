@@ -143,15 +143,10 @@ impl TableInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TableType {
-    /// Regular table
     Table,
-    /// View
     View,
-    /// Materialized view (PostgreSQL)
     MaterializedView,
-    /// System table
     SystemTable,
-    /// Temporary table
     TemporaryTable,
 }
 
@@ -517,7 +512,6 @@ impl DescribeTableRequest {
 pub fn parse_default_value(default_str: &str, data_type: &str) -> serde_json::Value {
     let dt_lower = data_type.to_lowercase();
 
-    // Integer types
     if dt_lower.contains("int")
         || dt_lower.contains("serial")
         || (dt_lower == "integer" || dt_lower.starts_with("integer"))
@@ -527,7 +521,6 @@ pub fn parse_default_value(default_str: &str, data_type: &str) -> serde_json::Va
         }
     }
 
-    // Float types (but NOT decimal/numeric - those need string for precision)
     if (dt_lower.contains("float") || dt_lower.contains("double") || dt_lower == "real")
         && !dt_lower.contains("decimal")
         && !dt_lower.contains("numeric")
@@ -539,7 +532,6 @@ pub fn parse_default_value(default_str: &str, data_type: &str) -> serde_json::Va
         }
     }
 
-    // Boolean types
     if dt_lower.contains("bool") {
         match default_str.to_lowercase().as_str() {
             "true" | "1" | "t" => return serde_json::Value::Bool(true),
