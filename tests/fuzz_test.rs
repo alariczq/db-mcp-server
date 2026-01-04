@@ -50,21 +50,6 @@ fn edge_case_strings() -> Vec<String> {
     ]
 }
 
-/// Generate edge-case integers
-#[allow(dead_code)]
-fn edge_case_integers() -> Vec<i64> {
-    vec![
-        0,
-        -1,
-        1,
-        i64::MIN,
-        i64::MAX,
-        u32::MAX as i64,
-        -9999999,
-        9999999,
-    ]
-}
-
 /// Generate edge-case unsigned integers
 fn edge_case_u32() -> Vec<u32> {
     vec![0, 1, u32::MAX, u32::MAX - 1, 999999]

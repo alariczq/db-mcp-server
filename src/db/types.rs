@@ -12,7 +12,7 @@
 //! This design centralizes type classification logic while allowing
 //! database-specific handling where needed.
 
-use crate::db::DatabaseType;
+use crate::models::DatabaseType;
 use serde_json::Value as JsonValue;
 use sqlx::mysql::{MySqlRow, MySqlTypeInfo, MySqlValueRef};
 use sqlx::postgres::{PgRow, PgTypeInfo, PgValueRef};
@@ -166,7 +166,7 @@ impl RowToJson for MySqlRow {
             .enumerate()
             .map(|(idx, col)| {
                 let type_name = col.type_info().name();
-                let category = categorize_type(type_name, DatabaseType::MySql);
+                let category = categorize_type(type_name, DatabaseType::MySQL);
                 let value = mysql::decode_column(self, idx, type_name, category, decode_binary);
                 (col.name().to_string(), value)
             })
@@ -192,7 +192,7 @@ impl RowToJson for PgRow {
             .enumerate()
             .map(|(idx, col)| {
                 let type_name = col.type_info().name();
-                let category = categorize_type(type_name, DatabaseType::Postgres);
+                let category = categorize_type(type_name, DatabaseType::PostgreSQL);
                 let value = postgres::decode_column(self, idx, type_name, category, decode_binary);
                 (col.name().to_string(), value)
             })
@@ -558,19 +558,19 @@ mod tests {
     #[test]
     fn test_categorize_type_integer() {
         assert_eq!(
-            categorize_type("INT", DatabaseType::MySql),
+            categorize_type("INT", DatabaseType::MySQL),
             TypeCategory::Integer
         );
         assert_eq!(
-            categorize_type("BIGINT", DatabaseType::Postgres),
+            categorize_type("BIGINT", DatabaseType::PostgreSQL),
             TypeCategory::Integer
         );
         assert_eq!(
-            categorize_type("TINYINT", DatabaseType::MySql),
+            categorize_type("TINYINT", DatabaseType::MySQL),
             TypeCategory::Integer
         );
         assert_eq!(
-            categorize_type("SERIAL", DatabaseType::Postgres),
+            categorize_type("SERIAL", DatabaseType::PostgreSQL),
             TypeCategory::Integer
         );
     }
@@ -578,11 +578,11 @@ mod tests {
     #[test]
     fn test_categorize_type_decimal() {
         assert_eq!(
-            categorize_type("DECIMAL", DatabaseType::MySql),
+            categorize_type("DECIMAL", DatabaseType::MySQL),
             TypeCategory::Decimal
         );
         assert_eq!(
-            categorize_type("NUMERIC", DatabaseType::Postgres),
+            categorize_type("NUMERIC", DatabaseType::PostgreSQL),
             TypeCategory::Decimal
         );
         // SQLite NUMERIC is a float
@@ -595,11 +595,11 @@ mod tests {
     #[test]
     fn test_categorize_type_json() {
         assert_eq!(
-            categorize_type("json", DatabaseType::Postgres),
+            categorize_type("json", DatabaseType::PostgreSQL),
             TypeCategory::Json
         );
         assert_eq!(
-            categorize_type("jsonb", DatabaseType::Postgres),
+            categorize_type("jsonb", DatabaseType::PostgreSQL),
             TypeCategory::Json
         );
     }
