@@ -66,10 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     TransactionRegistry::start_cleanup_task(transaction_registry.clone());
 
     let db_configs = config.parse_databases()?;
-    info!(
-        count = db_configs.len(),
-        "Connecting to preconfigured databases"
-    );
+    info!(count = db_configs.len(), "Connecting to databases");
 
     for db_config in &db_configs {
         info!(

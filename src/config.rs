@@ -302,7 +302,8 @@ pub struct Config {
         short = 'd',
         long = "database",
         value_name = "URL",
-        env = "MCP_DATABASE"
+        env = "MCP_DATABASE",
+        value_delimiter = ','
     )]
     pub databases: Vec<String>,
 
@@ -365,7 +366,7 @@ pub struct Config {
     pub transaction_timeout: u64,
 
     /// Log level (trace, debug, info, warn, error)
-    #[arg(long, default_value = "info", env = "MCP_LOG_LEVEL")]
+    #[arg(long, default_value = "error", env = "MCP_LOG_LEVEL")]
     pub log_level: String,
 
     /// Enable JSON logging format
