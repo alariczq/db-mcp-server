@@ -16,7 +16,7 @@ use tracing::info;
 pub struct ListTablesInput {
     /// Database connection ID from list_connections
     pub connection_id: String,
-    /// Filter by schema/database name. Required for server-level connections (without database in URL).
+    /// Schema/database name. Required for server-level connections (without database in URL).
     #[serde(default)]
     pub schema: Option<String>,
     /// Include views in the result. Default: true
@@ -336,6 +336,7 @@ impl SchemaToolHandler {
             .get_config(&input.connection_id)
             .await?;
 
+        // For server-level connections, schema parameter is required
         if config.server_level && input.schema.is_none() {
             return Err(DbError::invalid_input(
                 "Server-level connections require a 'schema' parameter to specify which database to query. \
@@ -343,15 +344,20 @@ impl SchemaToolHandler {
             ));
         }
 
+        let schema = input.schema.as_deref();
         let pool = self
             .connection_manager
-            .get_pool(&input.connection_id)
+            .get_pool_for_database(&input.connection_id, schema)
             .await?;
 
-        let tables =
-            SchemaInspector::list_tables(&pool, input.schema.as_deref(), input.include_views)
-                .await?;
+        let result =
+            SchemaInspector::list_tables(&pool, schema, input.include_views).await;
 
+        self.connection_manager
+            .release_pool_for_database(&input.connection_id, schema)
+            .await;
+
+        let tables = result?;
         let count = tables.len();
 
         info!(
@@ -372,6 +378,7 @@ impl SchemaToolHandler {
             .get_config(&input.connection_id)
             .await?;
 
+        // For server-level connections, schema parameter is required
         if config.server_level && input.schema.is_none() {
             return Err(DbError::invalid_input(
                 "Server-level connections require a 'schema' parameter to specify which database to query. \
@@ -379,14 +386,20 @@ impl SchemaToolHandler {
             ));
         }
 
+        let schema_name = input.schema.as_deref();
         let pool = self
             .connection_manager
-            .get_pool(&input.connection_id)
+            .get_pool_for_database(&input.connection_id, schema_name)
             .await?;
 
-        let schema =
-            SchemaInspector::describe_table(&pool, &input.table_name, input.schema.as_deref())
-                .await?;
+        let result =
+            SchemaInspector::describe_table(&pool, &input.table_name, schema_name).await;
+
+        self.connection_manager
+            .release_pool_for_database(&input.connection_id, schema_name)
+            .await;
+
+        let schema = result?;
 
         info!(
             connection_id = %input.connection_id,
@@ -400,12 +413,34 @@ impl SchemaToolHandler {
 
     /// SQLite returns an error as it doesn't support listing databases.
     pub async fn list_databases(&self, input: ListDatabasesInput) -> DbResult<ListDatabasesOutput> {
-        let pool = self
+        let config = self
             .connection_manager
-            .get_pool(&input.connection_id)
+            .get_config(&input.connection_id)
             .await?;
 
-        let db_rows = SchemaInspector::list_databases(&pool).await?;
+        // For server-level connections, use a system database to list all databases
+        let system_db = if config.server_level {
+            match config.db_type {
+                crate::models::DatabaseType::MySQL => Some("information_schema"),
+                crate::models::DatabaseType::PostgreSQL => Some("postgres"),
+                crate::models::DatabaseType::SQLite => None, // SQLite doesn't support list_databases
+            }
+        } else {
+            None
+        };
+
+        let pool = self
+            .connection_manager
+            .get_pool_for_database(&input.connection_id, system_db)
+            .await?;
+
+        let result = SchemaInspector::list_databases(&pool).await;
+
+        self.connection_manager
+            .release_pool_for_database(&input.connection_id, system_db)
+            .await;
+
+        let db_rows = result?;
         let count = db_rows.len();
 
         let databases: Vec<DatabaseInfo> = db_rows

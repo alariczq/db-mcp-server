@@ -50,6 +50,14 @@ pub enum DbError {
         "Dangerous operation blocked: {operation}. {reason}. To proceed, set 'dangerous_operation_allowed' to true."
     )]
     DangerousOperationBlocked { operation: String, reason: String },
+
+    #[error("Database '{database}' not found: {hint}")]
+    DatabaseNotFound { database: String, hint: String },
+
+    #[error(
+        "Database parameter required for server-level connection '{connection_id}'. Specify the 'database' parameter to target a specific database."
+    )]
+    DatabaseRequired { connection_id: String },
 }
 
 impl DbError {
@@ -138,6 +146,21 @@ impl DbError {
         }
     }
 
+    /// Create a database not found error.
+    pub fn database_not_found(database: impl Into<String>, hint: impl Into<String>) -> Self {
+        Self::DatabaseNotFound {
+            database: database.into(),
+            hint: hint.into(),
+        }
+    }
+
+    /// Create a database required error.
+    pub fn database_required(connection_id: impl Into<String>) -> Self {
+        Self::DatabaseRequired {
+            connection_id: connection_id.into(),
+        }
+    }
+
     /// Get the suggestion for this error, if available.
     pub fn suggestion(&self) -> Option<&str> {
         match self {
@@ -219,43 +242,79 @@ impl From<sqlx::Error> for DbError {
 /// Result type alias for database operations.
 pub type DbResult<T> = Result<T, DbError>;
 
+/// Build suggestion data as JSON value.
+fn suggestion_data(suggestion: Option<&str>) -> Option<serde_json::Value> {
+    suggestion.map(|s| serde_json::json!({ "suggestion": s }))
+}
+
 /// Convert DbError to MCP ErrorData for semantic error categorization.
+/// Includes the suggestion field in the `data` object when available.
 impl From<DbError> for rmcp::ErrorData {
     fn from(err: DbError) -> Self {
         match &err {
             // InvalidInput, Permission, DangerousOperationBlocked, Schema -> invalid_params
-            DbError::InvalidInput { .. } => rmcp::ErrorData::invalid_params(err.to_string(), None),
-            DbError::Permission { .. } => rmcp::ErrorData::invalid_params(err.to_string(), None),
+            DbError::InvalidInput { .. } => {
+                rmcp::ErrorData::invalid_params(err.to_string(), suggestion_data(err.suggestion()))
+            }
+            DbError::Permission { .. } => {
+                rmcp::ErrorData::invalid_params(err.to_string(), suggestion_data(err.suggestion()))
+            }
             DbError::DangerousOperationBlocked { .. } => {
-                rmcp::ErrorData::invalid_params(err.to_string(), None)
+                rmcp::ErrorData::invalid_params(err.to_string(), suggestion_data(err.suggestion()))
             }
-            DbError::Schema { .. } => rmcp::ErrorData::invalid_params(err.to_string(), None),
+            DbError::Schema { .. } => {
+                rmcp::ErrorData::invalid_params(err.to_string(), suggestion_data(err.suggestion()))
+            }
 
-            // ConnectionNotFound, Transaction -> resource_not_found
-            DbError::ConnectionNotFound { .. } => {
-                rmcp::ErrorData::resource_not_found(err.to_string(), None)
+            // ConnectionNotFound, Transaction, DatabaseNotFound -> resource_not_found
+            DbError::ConnectionNotFound { .. } => rmcp::ErrorData::resource_not_found(
+                err.to_string(),
+                suggestion_data(err.suggestion()),
+            ),
+            DbError::Transaction { .. } => rmcp::ErrorData::resource_not_found(
+                err.to_string(),
+                suggestion_data(err.suggestion()),
+            ),
+            DbError::DatabaseNotFound { hint, .. } => {
+                rmcp::ErrorData::resource_not_found(err.to_string(), suggestion_data(Some(hint)))
             }
-            DbError::Transaction { .. } => {
-                rmcp::ErrorData::resource_not_found(err.to_string(), None)
-            }
+
+            // DatabaseRequired -> invalid_params
+            DbError::DatabaseRequired { .. } => rmcp::ErrorData::invalid_params(
+                err.to_string(),
+                suggestion_data(Some(
+                    "Specify the 'database' parameter to target a specific database",
+                )),
+            ),
 
             // Connection, Timeout -> internal_error (with implicit retryable flag)
-            DbError::Connection { .. } => rmcp::ErrorData::internal_error(err.to_string(), None),
-            DbError::Timeout { .. } => rmcp::ErrorData::internal_error(err.to_string(), None),
+            DbError::Connection { suggestion, .. } => {
+                rmcp::ErrorData::internal_error(err.to_string(), suggestion_data(Some(suggestion)))
+            }
+            DbError::Timeout { .. } => rmcp::ErrorData::internal_error(
+                err.to_string(),
+                suggestion_data(Some(
+                    "Consider increasing the timeout or optimizing the operation",
+                )),
+            ),
 
             // Database errors -> invalid_params with sql_state in message
             DbError::Database {
-                message, sql_state, ..
+                message,
+                sql_state,
+                suggestion,
             } => {
                 let msg = match sql_state {
                     Some(code) => format!("{} (SQLSTATE: {})", message, code),
                     None => message.clone(),
                 };
-                rmcp::ErrorData::invalid_params(msg, None)
+                rmcp::ErrorData::invalid_params(msg, suggestion_data(Some(suggestion)))
             }
 
             // Internal -> internal_error
-            DbError::Internal { .. } => rmcp::ErrorData::internal_error(err.to_string(), None),
+            DbError::Internal { .. } => {
+                rmcp::ErrorData::internal_error(err.to_string(), suggestion_data(err.suggestion()))
+            }
         }
     }
 }
@@ -360,5 +419,32 @@ mod tests {
         let err = DbError::internal("unknown error");
         let mcp_err: rmcp::ErrorData = err.into();
         assert_eq!(mcp_err.code.0, -32603);
+    }
+
+    #[test]
+    fn test_connection_error_includes_suggestion_in_data() {
+        let err = DbError::connection("failed", "try reconnecting");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert!(mcp_err.data.is_some());
+        let data = mcp_err.data.unwrap();
+        assert_eq!(data["suggestion"], "try reconnecting");
+    }
+
+    #[test]
+    fn test_database_error_includes_suggestion_in_data() {
+        let err = DbError::database("syntax error", Some("42601".to_string()), "check syntax");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert!(mcp_err.data.is_some());
+        let data = mcp_err.data.unwrap();
+        assert_eq!(data["suggestion"], "check syntax");
+    }
+
+    #[test]
+    fn test_database_not_found_includes_hint_in_data() {
+        let err = DbError::database_not_found("mydb", "verify database exists");
+        let mcp_err: rmcp::ErrorData = err.into();
+        assert!(mcp_err.data.is_some());
+        let data = mcp_err.data.unwrap();
+        assert_eq!(data["suggestion"], "verify database exists");
     }
 }

@@ -3,6 +3,7 @@
 //! This module provides connection pooling functionality using database-specific
 //! pools (MySqlPool, PgPool, SqlitePool) to ensure full type support.
 
+use crate::db::database_pool::{DatabasePoolConfig, DatabasePoolManager, DatabaseTarget};
 use crate::error::{DbError, DbResult};
 use crate::models::{ConnectionConfig, ConnectionInfo, DatabaseType};
 use sqlx::{
@@ -60,12 +61,64 @@ impl DbPool {
     }
 }
 
+/// Connection pool type - either a direct database connection or a server-level manager.
+enum ConnectionPool {
+    /// Direct connection to a specific database.
+    Database {
+        pool: DbPool,
+        server_version: Option<String>,
+        /// Override manager for database-specific pools when using database parameter.
+        /// Lazily created on first database override request.
+        override_manager: Option<Arc<DatabasePoolManager>>,
+    },
+    /// Server-level connection with lazy per-database pool creation.
+    ServerLevel(Arc<DatabasePoolManager>),
+}
+
+impl ConnectionPool {
+    /// Close all pools including any override managers.
+    async fn close(&self) {
+        match self {
+            ConnectionPool::Database {
+                pool,
+                override_manager,
+                ..
+            } => {
+                pool.close().await;
+                if let Some(manager) = override_manager {
+                    manager.close_all().await;
+                }
+            }
+            ConnectionPool::ServerLevel(manager) => manager.close_all().await,
+        }
+    }
+}
+
+impl std::fmt::Debug for ConnectionPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConnectionPool::Database {
+                pool,
+                server_version,
+                override_manager,
+            } => f
+                .debug_struct("Database")
+                .field("pool", pool)
+                .field("server_version", server_version)
+                .field("has_override_manager", &override_manager.is_some())
+                .finish(),
+            ConnectionPool::ServerLevel(_) => f
+                .debug_struct("ServerLevel")
+                .field("manager", &"DatabasePoolManager")
+                .finish(),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct PoolEntry {
-    pool: DbPool,
+    connection: ConnectionPool,
     config: ConnectionConfig,
-    #[allow(dead_code)]
-    server_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +139,7 @@ impl ConnectionManager {
         let connection_id = config.id.clone();
         let db_type = config.db_type;
 
+        // Early check for existing connection
         {
             let pools = self.pools.read().await;
             if pools.contains_key(&connection_id) {
@@ -99,21 +153,56 @@ impl ConnectionManager {
         info!(
             connection_id = %connection_id,
             db_type = %db_type,
+            server_level = %config.server_level,
             "Connecting to database"
         );
 
-        let pool = self.create_pool(&config).await?;
-        let server_version = self.get_server_version(&pool).await;
-
-        let entry = PoolEntry {
-            pool,
-            config: config.clone(),
-            server_version: server_version.clone(),
+        let (connection, server_version) = if config.server_level {
+            // Server-level connection: create DatabasePoolManager
+            let db_pool_config = Self::create_database_pool_config(&config);
+            let manager = DatabasePoolManager::new(db_pool_config);
+            info!(
+                connection_id = %connection_id,
+                "Created database pool manager for server-level connection"
+            );
+            (ConnectionPool::ServerLevel(manager), None)
+        } else {
+            // Regular connection: create pool directly
+            let pool = self.create_pool(&config).await?;
+            let server_version = self.get_server_version(&pool).await;
+            (
+                ConnectionPool::Database {
+                    pool,
+                    server_version: server_version.clone(),
+                    override_manager: None,
+                },
+                server_version,
+            )
         };
 
-        {
+        // Re-check after async work to prevent TOCTOU race
+        // If duplicate detected, return the connection so we can close it outside the lock
+        let maybe_connection_to_close: Option<ConnectionPool> = {
             let mut pools = self.pools.write().await;
-            pools.insert(connection_id.clone(), entry);
+            if pools.contains_key(&connection_id) {
+                Some(connection)
+            } else {
+                let entry = PoolEntry {
+                    connection,
+                    config: config.clone(),
+                };
+                pools.insert(connection_id.clone(), entry);
+                None
+            }
+        }; // Lock released here
+
+        if let Some(conn_to_close) = maybe_connection_to_close {
+            // Close the pool we just created outside of lock
+            conn_to_close.close().await;
+            return Err(DbError::connection(
+                format!("Connection '{}' already exists", connection_id),
+                "Concurrent connection attempt detected. Try again with a different ID.",
+            ));
         }
 
         info!(
@@ -133,11 +222,130 @@ impl ConnectionManager {
     }
 
     /// Get a connection pool by ID.
+    /// For server-level connections, this returns an error - use get_pool_for_database instead.
     pub async fn get_pool(&self, connection_id: &str) -> DbResult<DbPool> {
         let pools = self.pools.read().await;
         match pools.get(connection_id) {
-            Some(entry) => Ok(entry.pool.clone()),
+            Some(entry) => match &entry.connection {
+                ConnectionPool::Database { pool, .. } => Ok(pool.clone()),
+                ConnectionPool::ServerLevel(_) => Err(DbError::database_required(connection_id)),
+            },
             None => Err(DbError::connection_not_found(connection_id)),
+        }
+    }
+
+    /// Get a connection pool for a specific database.
+    /// For server-level connections, uses the database pool manager.
+    /// For regular connections, if database matches or is None, returns the default pool.
+    /// If database differs, creates a database pool for the override.
+    pub async fn get_pool_for_database(
+        &self,
+        connection_id: &str,
+        database: Option<&str>,
+    ) -> DbResult<DbPool> {
+        // Determine what we need while holding the lock briefly
+        enum PoolSource {
+            Direct(DbPool),
+            Manager(Arc<DatabasePoolManager>, DatabaseTarget),
+            NeedOverride(String), // database name to override
+            Error(DbError),
+        }
+
+        let source = {
+            let pools = self.pools.read().await;
+            let entry = match pools.get(connection_id) {
+                Some(e) => e,
+                None => return Err(DbError::connection_not_found(connection_id)),
+            };
+
+            match &entry.connection {
+                ConnectionPool::ServerLevel(manager) => {
+                    match DatabaseTarget::from_option(database) {
+                        Ok(target) => PoolSource::Manager(Arc::clone(manager), target),
+                        Err(e) => PoolSource::Error(e),
+                    }
+                }
+                ConnectionPool::Database { pool, .. } => match database {
+                    None => PoolSource::Direct(pool.clone()),
+                    Some(db) if entry.config.database.as_deref() == Some(db) => {
+                        PoolSource::Direct(pool.clone())
+                    }
+                    Some("") => PoolSource::Error(DbError::invalid_input(
+                        "Database name cannot be empty. Omit the database parameter to use the default database.",
+                    )),
+                    Some(db) => PoolSource::NeedOverride(db.to_string()),
+                },
+            }
+        }; // Read lock released here
+
+        match source {
+            PoolSource::Direct(pool) => Ok(pool),
+            PoolSource::Error(e) => Err(e),
+            PoolSource::Manager(manager, target) => {
+                // Await outside of lock
+                manager.get_or_create_pool(&target).await
+            }
+            PoolSource::NeedOverride(db) => {
+                // Get or create override manager with brief write lock
+                let manager = {
+                    let mut pools = self.pools.write().await;
+                    let entry = pools
+                        .get_mut(connection_id)
+                        .ok_or_else(|| DbError::connection_not_found(connection_id))?;
+
+                    match &mut entry.connection {
+                        ConnectionPool::ServerLevel(m) => Arc::clone(m),
+                        ConnectionPool::Database {
+                            override_manager, ..
+                        } => {
+                            let manager = override_manager.get_or_insert_with(|| {
+                                let db_pool_config =
+                                    Self::create_database_pool_config(&entry.config);
+                                DatabasePoolManager::new(db_pool_config)
+                            });
+                            Arc::clone(manager)
+                        }
+                    }
+                }; // Write lock released here
+
+                let target = DatabaseTarget::Database(db);
+                manager.get_or_create_pool(&target).await
+            }
+        }
+    }
+
+    /// Release a database pool after use (decrements active count).
+    ///
+    /// Call this after completing an operation that acquired a pool via get_pool_for_database.
+    pub async fn release_pool_for_database(&self, connection_id: &str, database: Option<&str>) {
+        // Clone manager under brief lock, then release outside lock
+        let release_info: Option<(Arc<DatabasePoolManager>, DatabaseTarget)> = {
+            let pools = self.pools.read().await;
+            let Some(entry) = pools.get(connection_id) else {
+                return;
+            };
+
+            match &entry.connection {
+                ConnectionPool::ServerLevel(manager) => {
+                    DatabaseTarget::from_option(database)
+                        .ok()
+                        .map(|target| (Arc::clone(manager), target))
+                }
+                ConnectionPool::Database {
+                    override_manager: Some(manager),
+                    ..
+                } => database.map(|db| {
+                    (
+                        Arc::clone(manager),
+                        DatabaseTarget::Database(db.to_string()),
+                    )
+                }),
+                ConnectionPool::Database { .. } => None,
+            }
+        }; // Lock released here
+
+        if let Some((manager, target)) = release_info {
+            manager.release_pool(&target).await;
         }
     }
 
@@ -197,9 +405,25 @@ impl ConnectionManager {
         let mut pools = self.pools.write().await;
         for (id, entry) in pools.drain() {
             info!(connection_id = %id, "Closing connection");
-            entry.pool.close().await;
+            entry.connection.close().await;
         }
         info!("All connections closed");
+    }
+
+    fn create_database_pool_config(config: &ConnectionConfig) -> DatabasePoolConfig {
+        DatabasePoolConfig {
+            base_connection_string: config.connection_string.clone(),
+            db_type: config.db_type,
+            pool_options: config.pool_options.clone(),
+            idle_timeout: Duration::from_secs(
+                config.pool_options.database_pool_idle_timeout_or_default(),
+            ),
+            cleanup_interval: Duration::from_secs(
+                config
+                    .pool_options
+                    .database_pool_cleanup_interval_or_default(),
+            ),
+        }
     }
 
     /// Create a connection pool for the given configuration.
@@ -365,6 +589,135 @@ impl ConnectionManager {
 impl Default for ConnectionManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// RAII guard for database pool usage.
+///
+/// Automatically releases the pool (decrements active count) when dropped.
+/// This ensures proper cleanup even if a panic occurs during pool usage.
+///
+/// # Usage
+///
+/// ```ignore
+/// let guard = connection_manager
+///     .get_pool_for_database_guarded(&connection_id, database)
+///     .await?;
+///
+/// // Use the pool
+/// let result = executor.execute_query(guard.pool(), &request).await;
+///
+/// // Explicit release (preferred) or rely on Drop
+/// guard.release().await;
+/// ```
+///
+/// # Runtime Shutdown Behavior
+///
+/// The `Drop` implementation spawns a tokio task to handle async cleanup.
+/// If the tokio runtime is shutting down when `Drop` is called, the spawned
+/// task may not execute. This is acceptable because:
+/// - During shutdown, pool cleanup is handled by the runtime anyway
+/// - The active count becomes irrelevant once the manager is dropped
+///
+/// For critical cleanup paths, always use `release().await` explicitly.
+pub struct PoolGuard {
+    pool: DbPool,
+    connection_manager: Arc<ConnectionManager>,
+    connection_id: String,
+    database: Option<String>,
+    released: bool,
+}
+
+impl std::fmt::Debug for PoolGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PoolGuard")
+            .field("pool", &self.pool)
+            .field("connection_id", &self.connection_id)
+            .field("database", &self.database)
+            .field("released", &self.released)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PoolGuard {
+    /// Create a new pool guard.
+    fn new(
+        pool: DbPool,
+        connection_manager: Arc<ConnectionManager>,
+        connection_id: String,
+        database: Option<String>,
+    ) -> Self {
+        Self {
+            pool,
+            connection_manager,
+            connection_id,
+            database,
+            released: false,
+        }
+    }
+
+    /// Get a reference to the underlying pool.
+    pub fn pool(&self) -> &DbPool {
+        &self.pool
+    }
+
+    /// Explicitly release the pool (preferred over relying on Drop).
+    ///
+    /// This is more efficient than the Drop implementation as it doesn't
+    /// need to spawn a task.
+    pub async fn release(mut self) {
+        self.released = true;
+        self.connection_manager
+            .release_pool_for_database(&self.connection_id, self.database.as_deref())
+            .await;
+    }
+}
+
+impl Drop for PoolGuard {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+
+        // Spawn a task to handle async release - this is for panic safety
+        let connection_manager = Arc::clone(&self.connection_manager);
+        let connection_id = self.connection_id.clone();
+        let database = self.database.clone();
+
+        tokio::spawn(async move {
+            connection_manager
+                .release_pool_for_database(&connection_id, database.as_deref())
+                .await;
+            warn!(
+                connection_id = %connection_id,
+                database = ?database,
+                "Pool released via Drop - consider using explicit release()"
+            );
+        });
+    }
+}
+
+impl ConnectionManager {
+    /// Get a guarded connection pool for a specific database.
+    ///
+    /// Returns a `PoolGuard` that automatically releases the pool when dropped.
+    /// This provides panic safety - the active count will be decremented even
+    /// if an error or panic occurs during pool usage.
+    ///
+    /// For best performance, call `guard.release().await` explicitly when done
+    /// rather than relying on the Drop implementation.
+    pub async fn get_pool_for_database_guarded(
+        self: &Arc<Self>,
+        connection_id: &str,
+        database: Option<&str>,
+    ) -> DbResult<PoolGuard> {
+        let pool = self.get_pool_for_database(connection_id, database).await?;
+        Ok(PoolGuard::new(
+            pool,
+            Arc::clone(self),
+            connection_id.to_string(),
+            database.map(String::from),
+        ))
     }
 }
 

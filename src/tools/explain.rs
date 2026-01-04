@@ -39,6 +39,9 @@ pub struct ExplainInput {
     /// Output format: "json" returns structured data, "table" returns ASCII table, "markdown" returns markdown table
     #[serde(default)]
     pub format: OutputFormat,
+    /// Target database name. Required for server-level connections.
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 /// Output from the explain tool.
@@ -150,9 +153,10 @@ impl ExplainToolHandler {
                 .is_valid(tx_id, &input.connection_id)
                 .await?;
 
+            let database = input.database.as_deref();
             let pool = self
                 .connection_manager
-                .get_pool(&input.connection_id)
+                .get_pool_for_database(&input.connection_id, database)
                 .await?;
             let explain_sql = Self::generate_explain_sql(&pool, sql);
 
@@ -167,7 +171,13 @@ impl ExplainToolHandler {
                     10000, // EXPLAIN results are typically small
                     true,  // decode_binary
                 )
-                .await?;
+                .await;
+
+            self.connection_manager
+                .release_pool_for_database(&input.connection_id, database)
+                .await;
+
+            let result = result?;
 
             return Ok(Self::build_output(
                 result.rows,
@@ -177,15 +187,22 @@ impl ExplainToolHandler {
             ));
         }
 
+        let database = input.database.as_deref();
         let pool = self
             .connection_manager
-            .get_pool(&input.connection_id)
+            .get_pool_for_database(&input.connection_id, database)
             .await?;
         let explain_sql = Self::generate_explain_sql(&pool, sql);
 
-        let rows = self
+        let result = self
             .execute_explain(&pool, &explain_sql, &params, timeout)
-            .await?;
+            .await;
+
+        self.connection_manager
+            .release_pool_for_database(&input.connection_id, database)
+            .await;
+
+        let rows = result?;
 
         Ok(Self::build_output(
             rows,

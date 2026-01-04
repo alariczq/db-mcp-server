@@ -53,6 +53,7 @@ async fn test_transaction_rollback() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await;
 
@@ -69,6 +70,7 @@ async fn test_transaction_rollback() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await;
 
@@ -77,6 +79,7 @@ async fn test_transaction_rollback() {
         .begin_transaction(BeginTransactionInput {
             connection_id: "test_mysql".to_string(),
             timeout_secs: None,
+            database: None,
         })
         .await
         .expect("Failed to begin transaction");
@@ -93,6 +96,7 @@ async fn test_transaction_rollback() {
             timeout_secs: None,
             transaction_id: Some(tx_id.clone()),
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await
         .expect("Failed to insert in transaction");
@@ -123,6 +127,7 @@ async fn test_transaction_rollback() {
             format: OutputFormat::Json,
             decode_binary: false,
             transaction_id: None,
+            database: None,
         })
         .await
         .expect("Failed to query");
@@ -172,6 +177,7 @@ async fn test_transaction_commit() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await;
 
@@ -180,6 +186,7 @@ async fn test_transaction_commit() {
         .begin_transaction(BeginTransactionInput {
             connection_id: "test_mysql".to_string(),
             timeout_secs: None,
+            database: None,
         })
         .await
         .expect("Failed to begin transaction");
@@ -195,6 +202,7 @@ async fn test_transaction_commit() {
             timeout_secs: None,
             transaction_id: Some(tx_id.clone()),
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await
         .expect("Failed to insert in transaction");
@@ -219,6 +227,7 @@ async fn test_transaction_commit() {
             format: OutputFormat::Json,
             decode_binary: false,
             transaction_id: None,
+            database: None,
         })
         .await
         .expect("Failed to query");
@@ -235,6 +244,7 @@ async fn test_transaction_commit() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await;
 }

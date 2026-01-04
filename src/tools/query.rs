@@ -45,6 +45,9 @@ pub struct QueryInput {
     /// Run query within an existing transaction (from begin_transaction). Omit for auto-commit.
     #[serde(default)]
     pub transaction_id: Option<String>,
+    /// Target database name. Required for server-level connections. Optional for database-specific connections (overrides URL database).
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 /// Output from the query tool.
@@ -226,9 +229,10 @@ impl QueryToolHandler {
             ));
         }
 
+        let database = input.database.as_deref();
         let pool = self
             .connection_manager
-            .get_pool(&input.connection_id)
+            .get_pool_for_database(&input.connection_id, database)
             .await?;
 
         let request = QueryRequest {
@@ -240,7 +244,14 @@ impl QueryToolHandler {
             decode_binary: input.decode_binary,
         };
 
-        let result = self.executor.execute_query(&pool, &request).await?;
+        let result = self.executor.execute_query(&pool, &request).await;
+
+        // Release the pool after use (decrements active_count)
+        self.connection_manager
+            .release_pool_for_database(&input.connection_id, database)
+            .await;
+
+        let result = result?;
 
         info!(
             connection_id = %input.connection_id,

@@ -129,7 +129,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Execute a SELECT query and return results.\nSupports parameterized queries to prevent SQL injection.\nOutput format: json (default), table, or markdown.\nCan run within a transaction using transaction_id.\nFor server-level connections (no default database), specify database in SQL: use `db.table` syntax or `SHOW TABLES FROM db`."
+        description = "Execute a SELECT query and return results.\nSupports parameterized queries to prevent SQL injection.\nOutput format: json (default), table, or markdown.\nCan run within a transaction using transaction_id.\nFor server-level connections (no default database), specify database in SQL: use `db.table` syntax or `SHOW TABLES FROM db`.\nFor server-level connections, use `database` parameter to target a specific database (creates a dedicated pool lazily)."
     )]
     async fn query(
         &self,
@@ -198,7 +198,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Execute a write operation (INSERT, UPDATE, DELETE, DDL).\nRequires read-write connection (read_only: false).\nCan run within a transaction using transaction_id.\nDangerous operations return warning instead of executing: DROP, TRUNCATE, DELETE/UPDATE without WHERE.\nFor server-level connections, use `db.table` syntax or `USE database_name` first."
+        description = "Execute a write operation (INSERT, UPDATE, DELETE, DDL).\nRequires read-write connection (read_only: false).\nCan run within a transaction using transaction_id.\nDangerous operations return warning instead of executing: DROP, TRUNCATE, DELETE/UPDATE without WHERE.\nFor server-level connections, use `db.table` syntax or `USE database_name` first.\nFor server-level connections, use `database` parameter to target a specific database (creates a dedicated pool lazily)."
     )]
     async fn execute(
         &self,
@@ -215,7 +215,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Begin a new database transaction.\nRequires read-write connection. Returns transaction_id for commit/rollback."
+        description = "Begin a new database transaction.\nRequires read-write connection. Returns transaction_id for commit/rollback.\nFor server-level connections, use `database` parameter to target a specific database."
     )]
     async fn begin_transaction(
         &self,
@@ -277,7 +277,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Show query execution plan without executing the query.\nSupports SELECT, INSERT, UPDATE, and DELETE statements.\nUseful for understanding query performance and index usage.\nOutput format: \"json\" returns structured data, \"table\" returns ASCII table, \"markdown\" returns markdown table."
+        description = "Show query execution plan without executing the query.\nSupports SELECT, INSERT, UPDATE, and DELETE statements.\nUseful for understanding query performance and index usage.\nOutput format: \"json\" returns structured data, \"table\" returns ASCII table, \"markdown\" returns markdown table.\nFor server-level connections, use `database` parameter to target a specific database."
     )]
     async fn explain(
         &self,
@@ -329,9 +329,15 @@ impl ServerHandler for DbService {
                 - **Read-write**: read_only: false, can use write tools\n\
                 - **Server-level**: server_level: true, no default database; requires `schema` parameter for list_tables/describe_table, or use `db.table` syntax in queries\n\
                 \n\
+                ## Per-Database Pools (Server-Level Connections)\n\
+                For server-level connections, use the `database` parameter to target a specific database:\n\
+                - Pools are created lazily when first accessed\n\
+                - Idle pools are automatically cleaned up after 10 minutes\n\
+                - Each database gets its own connection pool for isolation\n\
+                \n\
                 ## Database-Specific Notes\n\
-                - MySQL: Cross-database queries supported (use `db.table` syntax)\n\
-                - PostgreSQL: Queries cannot span databases\n\
+                - MySQL: Cross-database queries supported (use `db.table` syntax or `database` parameter)\n\
+                - PostgreSQL: Queries cannot span databases (use `database` parameter to switch)\n\
                 - SQLite: list_databases not supported (file-based)"
                     .to_string(),
             ),

@@ -47,6 +47,7 @@ async fn test_mysql_utf8_chinese_characters() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: true,
+            database: None,
         })
         .await;
 
@@ -63,6 +64,7 @@ async fn test_mysql_utf8_chinese_characters() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await
         .expect("Failed to create table");
@@ -77,6 +79,7 @@ async fn test_mysql_utf8_chinese_characters() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await
         .expect("Failed to insert Chinese data");
@@ -92,6 +95,7 @@ async fn test_mysql_utf8_chinese_characters() {
             format: OutputFormat::Json,
             decode_binary: false,
             transaction_id: None,
+            database: None,
         })
         .await
         .expect("Failed to query");
@@ -127,6 +131,7 @@ async fn test_mysql_utf8_chinese_characters() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: true,
+            database: None,
         })
         .await;
 }
@@ -167,6 +172,7 @@ async fn test_mysql_table_comment_utf8() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: true,
+            database: None,
         })
         .await;
 
@@ -181,6 +187,7 @@ async fn test_mysql_table_comment_utf8() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: false,
+            database: None,
         })
         .await
         .expect("Failed to create table");
@@ -196,6 +203,7 @@ async fn test_mysql_table_comment_utf8() {
             format: OutputFormat::Json,
             decode_binary: false,
             transaction_id: None,
+            database: None,
         })
         .await
         .expect("Failed to query");
@@ -224,6 +232,7 @@ async fn test_mysql_table_comment_utf8() {
             format: OutputFormat::Json,
             decode_binary: false,
             transaction_id: None,
+            database: None,
         })
         .await
         .expect("Failed to query");
@@ -253,6 +262,7 @@ async fn test_mysql_table_comment_utf8() {
             timeout_secs: None,
             transaction_id: None,
             dangerous_operation_allowed: true,
+            database: None,
         })
         .await;
 }

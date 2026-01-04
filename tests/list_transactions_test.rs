@@ -81,6 +81,7 @@ async fn test_list_transactions_shows_active_transaction() {
     let begin_input = BeginTransactionInput {
         connection_id: conn_id.clone(),
         timeout_secs: Some(60),
+        database: None,
     };
     let begin_result = handler.begin_transaction(begin_input).await;
     assert!(begin_result.is_ok());
@@ -122,6 +123,7 @@ async fn test_list_transactions_multiple_transactions() {
     let begin_input1 = BeginTransactionInput {
         connection_id: conn_id.clone(),
         timeout_secs: Some(60),
+        database: None,
     };
     let tx1 = handler
         .begin_transaction(begin_input1)
@@ -133,6 +135,7 @@ async fn test_list_transactions_multiple_transactions() {
     let begin_input2 = BeginTransactionInput {
         connection_id: conn_id.clone(),
         timeout_secs: Some(120),
+        database: None,
     };
     let tx2 = handler
         .begin_transaction(begin_input2)
@@ -217,6 +220,7 @@ async fn test_list_transactions_filter_by_connection_id() {
     let begin_input = BeginTransactionInput {
         connection_id: conn_id.clone(),
         timeout_secs: Some(60),
+        database: None,
     };
     let tx_id = handler
         .begin_transaction(begin_input)

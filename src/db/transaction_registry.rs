@@ -712,8 +712,9 @@ mod tests {
 
     #[test]
     fn test_timeout_constants() {
-        assert!(DEFAULT_TRANSACTION_TIMEOUT_SECS <= MAX_TRANSACTION_TIMEOUT_SECS);
-        assert!(MAX_TRANSACTION_TIMEOUT_SECS <= 300);
+        // Use const blocks for compile-time assertions to satisfy clippy
+        const { assert!(DEFAULT_TRANSACTION_TIMEOUT_SECS <= MAX_TRANSACTION_TIMEOUT_SECS) }
+        const { assert!(MAX_TRANSACTION_TIMEOUT_SECS <= 300) }
     }
 
     #[tokio::test]

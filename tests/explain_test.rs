@@ -60,6 +60,7 @@ async fn test_explain_simple_select() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -85,6 +86,7 @@ async fn test_explain_select_with_where() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -110,6 +112,7 @@ async fn test_explain_with_parameters() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -130,6 +133,7 @@ async fn test_explain_insert_statement() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -153,6 +157,7 @@ async fn test_explain_invalid_sql() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -172,6 +177,7 @@ async fn test_explain_empty_sql_returns_error() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -191,6 +197,7 @@ async fn test_explain_invalid_connection_returns_error() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -210,6 +217,7 @@ async fn test_explain_output_has_execution_time() {
         transaction_id: None,
         timeout_secs: None,
         format: Default::default(),
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -253,6 +261,7 @@ async fn test_explain_with_table_format() {
         transaction_id: None,
         timeout_secs: None,
         format: db_mcp_server::tools::format::OutputFormat::Table,
+        database: None,
     };
 
     let result = handler.explain(input).await;
@@ -280,6 +289,7 @@ async fn test_explain_with_markdown_format() {
         transaction_id: None,
         timeout_secs: None,
         format: db_mcp_server::tools::format::OutputFormat::Markdown,
+        database: None,
     };
 
     let result = handler.explain(input).await;

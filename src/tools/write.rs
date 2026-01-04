@@ -34,6 +34,9 @@ pub struct ExecuteInput {
     /// Set to true to allow dangerous operations: DROP, TRUNCATE, DELETE without WHERE, UPDATE without WHERE. These are blocked by default to prevent accidental data loss.
     #[serde(default)]
     pub dangerous_operation_allowed: bool,
+    /// Target database name. Required for server-level connections. Optional for database-specific connections.
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 /// Output from the execute tool.
@@ -127,15 +130,22 @@ impl WriteToolHandler {
             });
         }
 
+        let database = input.database.as_deref();
         let pool = self
             .connection_manager
-            .get_pool(&input.connection_id)
+            .get_pool_for_database(&input.connection_id, database)
             .await?;
         let timeout = input.timeout_secs.map(|t| Duration::from_secs(t as u64));
-        let (rows_affected, execution_time_ms) = self
+        let result = self
             .executor
             .execute_write(&pool, &input.sql, &params, timeout)
-            .await?;
+            .await;
+
+        self.connection_manager
+            .release_pool_for_database(&input.connection_id, database)
+            .await;
+
+        let (rows_affected, execution_time_ms) = result?;
 
         info!(
             connection_id = %input.connection_id,

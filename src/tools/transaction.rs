@@ -27,6 +27,9 @@ pub struct BeginTransactionInput {
     /// Transaction timeout in seconds. Auto-rollback if exceeded. Default: 60, max: 300
     #[serde(default)]
     pub timeout_secs: Option<u32>,
+    /// Target database for transaction. Required for server-level connections.
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 /// Output from the begin_transaction tool.
@@ -157,28 +160,35 @@ impl TransactionToolHandler {
             .map(|t| t.min(MAX_TRANSACTION_TIMEOUT_SECS))
             .unwrap_or(DEFAULT_TRANSACTION_TIMEOUT_SECS);
 
+        let database = input.database.as_deref();
         let pool = self
             .connection_manager
-            .get_pool(&input.connection_id)
+            .get_pool_for_database(&input.connection_id, database)
             .await?;
 
-        let transaction_id = match pool {
+        let result = match pool {
             DbPool::MySql(ref p) => {
                 self.transaction_registry
                     .begin_mysql(p, input.connection_id.clone(), Some(timeout_secs))
-                    .await?
+                    .await
             }
             DbPool::Postgres(ref p) => {
                 self.transaction_registry
                     .begin_postgres(p, input.connection_id.clone(), Some(timeout_secs))
-                    .await?
+                    .await
             }
             DbPool::SQLite(ref p) => {
                 self.transaction_registry
                     .begin_sqlite(p, input.connection_id.clone(), Some(timeout_secs))
-                    .await?
+                    .await
             }
         };
+
+        self.connection_manager
+            .release_pool_for_database(&input.connection_id, database)
+            .await;
+
+        let transaction_id = result?;
 
         info!(
             connection_id = %input.connection_id,

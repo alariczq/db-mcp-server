@@ -21,6 +21,10 @@ pub const DEFAULT_MIN_CONNECTIONS: u32 = 1;
 pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
 pub const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
 
+// Database pool configuration defaults (for server-level connections)
+pub const DEFAULT_DATABASE_POOL_IDLE_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_DATABASE_POOL_CLEANUP_INTERVAL_SECS: u64 = 60;
+
 /// Connection pool configuration options parsed from database URL.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct PoolOptions {
@@ -34,6 +38,10 @@ pub struct PoolOptions {
     pub acquire_timeout_secs: Option<u64>,
     /// Whether to test connections before use (default: true)
     pub test_before_acquire: Option<bool>,
+    /// Idle timeout for database pools in seconds (default: 600)
+    pub database_pool_idle_timeout_secs: Option<u64>,
+    /// Cleanup interval for database pools in seconds (default: 60)
+    pub database_pool_cleanup_interval_secs: Option<u64>,
 }
 
 impl PoolOptions {
@@ -65,6 +73,18 @@ impl PoolOptions {
     /// Get test_before_acquire with default value.
     pub fn test_before_acquire_or_default(&self) -> bool {
         self.test_before_acquire.unwrap_or(true)
+    }
+
+    /// Get database_pool_idle_timeout with default value.
+    pub fn database_pool_idle_timeout_or_default(&self) -> u64 {
+        self.database_pool_idle_timeout_secs
+            .unwrap_or(DEFAULT_DATABASE_POOL_IDLE_TIMEOUT_SECS)
+    }
+
+    /// Get database_pool_cleanup_interval with default value.
+    pub fn database_pool_cleanup_interval_or_default(&self) -> u64 {
+        self.database_pool_cleanup_interval_secs
+            .unwrap_or(DEFAULT_DATABASE_POOL_CLEANUP_INTERVAL_SECS)
     }
 
     /// Validate pool options and return an error message if invalid.
@@ -152,6 +172,8 @@ impl DatabaseConfig {
         "idle_timeout",
         "acquire_timeout",
         "test_before_acquire",
+        "database_pool_idle_timeout",
+        "database_pool_cleanup_interval",
     ];
 
     pub fn parse(s: &str) -> Result<Self, String> {
@@ -217,6 +239,12 @@ impl DatabaseConfig {
                     None // Invalid value ignored
                 }
             }),
+            database_pool_idle_timeout_secs: opts
+                .remove("database_pool_idle_timeout")
+                .and_then(|v| v.parse().ok()),
+            database_pool_cleanup_interval_secs: opts
+                .remove("database_pool_cleanup_interval")
+                .and_then(|v| v.parse().ok()),
         }
     }
 
@@ -700,6 +728,8 @@ mod tests {
             idle_timeout_secs: Some(300),
             acquire_timeout_secs: Some(60),
             test_before_acquire: Some(false),
+            database_pool_idle_timeout_secs: None,
+            database_pool_cleanup_interval_secs: None,
         };
         assert_eq!(opts.max_connections_or_default(false), 20);
         assert_eq!(opts.max_connections_or_default(true), 20);
