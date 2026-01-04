@@ -8,7 +8,7 @@ use crate::error::{DbError, DbResult};
 use crate::models::{ConnectionConfig, ConnectionInfo, DatabaseType};
 use sqlx::{
     MySqlPool, PgPool, SqlitePool, mysql::MySqlConnectOptions, mysql::MySqlPoolOptions,
-    postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
+    postgres::PgPoolOptions, sqlite::SqliteConnectOptions, sqlite::SqlitePoolOptions,
 };
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -326,11 +326,9 @@ impl ConnectionManager {
             };
 
             match &entry.connection {
-                ConnectionPool::ServerLevel(manager) => {
-                    DatabaseTarget::from_option(database)
-                        .ok()
-                        .map(|target| (Arc::clone(manager), target))
-                }
+                ConnectionPool::ServerLevel(manager) => DatabaseTarget::from_option(database)
+                    .ok()
+                    .map(|target| (Arc::clone(manager), target)),
                 ConnectionPool::Database {
                     override_manager: Some(manager),
                     ..
@@ -478,13 +476,27 @@ impl ConnectionManager {
                 Ok(DbPool::Postgres(pool))
             }
             DatabaseType::SQLite => {
+                let mut options = SqliteConnectOptions::from_str(&config.connection_string)
+                    .map_err(|e| {
+                        DbError::connection(
+                            format!("Invalid SQLite connection string: {}", e),
+                            "Check the connection URL format: sqlite:path/to/db.sqlite",
+                        )
+                    })?;
+
+                if config.writable {
+                    options = options.create_if_missing(true).read_only(false);
+                } else {
+                    options = options.read_only(true);
+                }
+
                 let pool = SqlitePoolOptions::new()
                     .min_connections(pool_opts.min_connections_or_default())
                     .max_connections(pool_opts.max_connections_or_default(is_sqlite))
                     .acquire_timeout(acquire_timeout)
                     .idle_timeout(idle_timeout)
                     .test_before_acquire(pool_opts.test_before_acquire_or_default())
-                    .connect(&config.connection_string)
+                    .connect_with(options)
                     .await
                     .map_err(|e| {
                         DbError::connection(

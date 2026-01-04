@@ -46,8 +46,8 @@ use crate::models::DatabaseType;
 use sqlx::{mysql::MySqlConnectOptions, mysql::MySqlPoolOptions, postgres::PgPoolOptions};
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{OnceCell, RwLock as TokioRwLock};
 use tokio::task::JoinHandle;
@@ -119,13 +119,15 @@ impl DatabasePoolEntry {
     /// Saturates at 0 to prevent underflow from extra release calls.
     pub fn decrement_active(&self) {
         // Use fetch_update to saturate at 0
-        let result = self.active_count.fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
-            if count > 0 {
-                Some(count - 1)
-            } else {
-                Some(0) // Saturate at 0, don't wrap
-            }
-        });
+        let result = self
+            .active_count
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                if count > 0 {
+                    Some(count - 1)
+                } else {
+                    Some(0) // Saturate at 0, don't wrap
+                }
+            });
 
         // Log warning if we detected an underflow attempt (helps catch logic bugs)
         if let Ok(prev) = result {

@@ -16,9 +16,9 @@ use tracing::info;
 pub struct ListTablesInput {
     /// Database connection ID from list_connections
     pub connection_id: String,
-    /// Schema/database name. Required for server-level connections (without database in URL).
+    /// Database name. Required for server-level connections (without database in URL).
     #[serde(default)]
-    pub schema: Option<String>,
+    pub database: Option<String>,
     /// Include views in the result. Default: true
     #[serde(default = "default_true")]
     pub include_views: bool,
@@ -165,9 +165,9 @@ pub struct DescribeTableInput {
     pub connection_id: String,
     /// Name of the table to describe
     pub table_name: String,
-    /// Schema/database name containing the table. Required for server-level connections (without database in URL).
+    /// Database name containing the table. Required for server-level connections (without database in URL).
     #[serde(default)]
-    pub schema: Option<String>,
+    pub database: Option<String>,
 }
 
 /// Output from the describe_table tool.
@@ -336,25 +336,24 @@ impl SchemaToolHandler {
             .get_config(&input.connection_id)
             .await?;
 
-        // For server-level connections, schema parameter is required
-        if config.server_level && input.schema.is_none() {
+        // For server-level connections, database parameter is required
+        if config.server_level && input.database.is_none() {
             return Err(DbError::invalid_input(
-                "Server-level connections require a 'schema' parameter to specify which database to query. \
-                Use list_databases first to discover available databases, then call list_tables with schema=<database_name>.",
+                "Server-level connections require a 'database' parameter to specify which database to query. \
+                Use list_databases first to discover available databases, then call list_tables with database=<database_name>.",
             ));
         }
 
-        let schema = input.schema.as_deref();
+        let database = input.database.as_deref();
         let pool = self
             .connection_manager
-            .get_pool_for_database(&input.connection_id, schema)
+            .get_pool_for_database(&input.connection_id, database)
             .await?;
 
-        let result =
-            SchemaInspector::list_tables(&pool, schema, input.include_views).await;
+        let result = SchemaInspector::list_tables(&pool, database, input.include_views).await;
 
         self.connection_manager
-            .release_pool_for_database(&input.connection_id, schema)
+            .release_pool_for_database(&input.connection_id, database)
             .await;
 
         let tables = result?;
@@ -378,25 +377,24 @@ impl SchemaToolHandler {
             .get_config(&input.connection_id)
             .await?;
 
-        // For server-level connections, schema parameter is required
-        if config.server_level && input.schema.is_none() {
+        // For server-level connections, database parameter is required
+        if config.server_level && input.database.is_none() {
             return Err(DbError::invalid_input(
-                "Server-level connections require a 'schema' parameter to specify which database to query. \
-                Use list_databases first to discover available databases, then call describe_table with schema=<database_name>.",
+                "Server-level connections require a 'database' parameter to specify which database to query. \
+                Use list_databases first to discover available databases, then call describe_table with database=<database_name>.",
             ));
         }
 
-        let schema_name = input.schema.as_deref();
+        let database = input.database.as_deref();
         let pool = self
             .connection_manager
-            .get_pool_for_database(&input.connection_id, schema_name)
+            .get_pool_for_database(&input.connection_id, database)
             .await?;
 
-        let result =
-            SchemaInspector::describe_table(&pool, &input.table_name, schema_name).await;
+        let result = SchemaInspector::describe_table(&pool, &input.table_name, database).await;
 
         self.connection_manager
-            .release_pool_for_database(&input.connection_id, schema_name)
+            .release_pool_for_database(&input.connection_id, database)
             .await;
 
         let schema = result?;
@@ -524,7 +522,7 @@ mod tests {
         let input: ListTablesInput = serde_json::from_str(json).unwrap();
 
         assert!(input.include_views);
-        assert!(input.schema.is_none());
+        assert!(input.database.is_none());
     }
 
     #[test]
@@ -532,12 +530,12 @@ mod tests {
         let json = r#"{
             "connection_id": "conn1",
             "table_name": "users",
-            "schema": "public"
+            "database": "public"
         }"#;
 
         let input: DescribeTableInput = serde_json::from_str(json).unwrap();
         assert_eq!(input.table_name, "users");
-        assert_eq!(input.schema, Some("public".to_string()));
+        assert_eq!(input.database, Some("public".to_string()));
     }
 
     #[test]

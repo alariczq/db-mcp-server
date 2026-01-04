@@ -22,12 +22,12 @@ use tracing::info;
 /// Input for the begin_transaction tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct BeginTransactionInput {
-    /// Database connection ID from list_connections. Must be a read-write connection (read_only: false).
+    /// Database connection ID from list_connections
     pub connection_id: String,
     /// Transaction timeout in seconds. Auto-rollback if exceeded. Default: 60, max: 300
     #[serde(default)]
     pub timeout_secs: Option<u32>,
-    /// Target database for transaction. Required for server-level connections.
+    /// Target database for transaction. Optional for server-level connections - omit for server-level transactions. Specify to create transaction on a specific database.
     #[serde(default)]
     pub database: Option<String>,
 }
@@ -143,17 +143,8 @@ impl TransactionToolHandler {
         &self,
         input: BeginTransactionInput,
     ) -> DbResult<BeginTransactionOutput> {
-        let is_writable = self
-            .connection_manager
-            .is_writable(&input.connection_id)
-            .await?;
-
-        if !is_writable {
-            return Err(DbError::permission(
-                "begin transaction",
-                "Cannot start transaction: connection is not writable. Use ?writable=true in the connection URL",
-            ));
-        }
+        // Note: Readonly connections can begin transactions (read-only transactions)
+        // The writable check will be performed when executing write operations within the transaction
 
         let timeout_secs = input
             .timeout_secs

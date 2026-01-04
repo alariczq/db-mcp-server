@@ -120,7 +120,7 @@ impl DbService {
 #[tool_router]
 impl DbService {
     #[tool(
-        description = "List all available database connections.\nReturns connection IDs, types (MySQL/PostgreSQL/SQLite), and read-only status."
+        description = "List all available database connections.\nReturns connection IDs, types (MySQL/PostgreSQL/SQLite), and writable status."
     )]
     async fn list_connections(&self) -> Json<ListConnectionsOutput> {
         let connections = self.connection_manager.list_connections_detail().await;
@@ -128,9 +128,10 @@ impl DbService {
         Json(ListConnectionsOutput { connections, count })
     }
 
-    #[tool(
-        description = "Execute a SELECT query and return results.\nSupports parameterized queries to prevent SQL injection.\nOutput format: json (default), table, or markdown.\nCan run within a transaction using transaction_id.\nFor server-level connections (no default database), specify database in SQL: use `db.table` syntax or `SHOW TABLES FROM db`.\nFor server-level connections, use `database` parameter to target a specific database (creates a dedicated pool lazily)."
-    )]
+    #[tool(description = "Execute a SELECT query and return results.\n\
+                Supports parameterized queries to prevent SQL injection.\n\
+                Output format: json (default), table, or markdown.\n\
+                Can run within a transaction using transaction_id.")]
     async fn query(
         &self,
         Parameters(input): Parameters<QueryInput>,
@@ -163,9 +164,7 @@ impl DbService {
             .map_err(Into::into)
     }
 
-    #[tool(
-        description = "List all tables and views in the database.\nCan filter by schema name.\nServer-level connections (without database in URL) require `schema` parameter."
-    )]
+    #[tool(description = "List all tables and views in the database.")]
     async fn list_tables(
         &self,
         Parameters(input): Parameters<ListTablesInput>,
@@ -181,7 +180,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Get detailed schema information for a table.\nReturns columns, primary keys, foreign keys, and indexes.\nServer-level connections (without database in URL) require `schema` parameter."
+        description = "Get detailed schema information for a table.\nReturns columns, primary keys, foreign keys, and indexes."
     )]
     async fn describe_table(
         &self,
@@ -198,7 +197,10 @@ impl DbService {
     }
 
     #[tool(
-        description = "Execute a write operation (INSERT, UPDATE, DELETE, DDL).\nRequires read-write connection (read_only: false).\nCan run within a transaction using transaction_id.\nDangerous operations return warning instead of executing: DROP, TRUNCATE, DELETE/UPDATE without WHERE.\nFor server-level connections, use `db.table` syntax or `USE database_name` first.\nFor server-level connections, use `database` parameter to target a specific database (creates a dedicated pool lazily)."
+        description = "Execute a write operation (INSERT, UPDATE, DELETE, DDL).\n\
+        Requires writable connection (writable: true).\n\
+        Can run within a transaction using transaction_id.\n\
+        Dangerous operations blocked by default: DROP, TRUNCATE, DELETE/UPDATE without WHERE."
     )]
     async fn execute(
         &self,
@@ -215,7 +217,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Begin a new database transaction.\nRequires read-write connection. Returns transaction_id for commit/rollback.\nFor server-level connections, use `database` parameter to target a specific database."
+        description = "Begin a new database transaction.\nReturns transaction_id for commit/rollback."
     )]
     async fn begin_transaction(
         &self,
@@ -277,7 +279,7 @@ impl DbService {
     }
 
     #[tool(
-        description = "Show query execution plan without executing the query.\nSupports SELECT, INSERT, UPDATE, and DELETE statements.\nUseful for understanding query performance and index usage.\nOutput format: \"json\" returns structured data, \"table\" returns ASCII table, \"markdown\" returns markdown table.\nFor server-level connections, use `database` parameter to target a specific database."
+        description = "Show query execution plan without executing the query.\nSupports SELECT, INSERT, UPDATE, and DELETE statements.\nUseful for understanding query performance and index usage."
     )]
     async fn explain(
         &self,
@@ -312,7 +314,7 @@ impl ServerHandler for DbService {
                 ## Workflow\n\
                 1. Call `list_connections` to get available database IDs\n\
                 2. Use the `connection_id` from step 1 in all other tool calls\n\
-                3. For write operations, ensure the connection is read-write (read_only: false)\n\
+                3. For server-level connections, use `database` parameter to target a specific database\n\
                 \n\
                 ## Transaction Workflow\n\
                 1. `begin_transaction` → returns transaction_id\n\
@@ -321,19 +323,9 @@ impl ServerHandler for DbService {
                 \n\
                 ## Tools by Category\n\
                 - **Read-only**: query, list_tables, describe_table, list_databases, explain\n\
-                - **Write** (requires read_only: false): execute, begin_transaction, commit, rollback\n\
+                - **Write** (requires writable: true): execute\n\
+                - **Transaction**: begin_transaction, commit, rollback\n\
                 - **Utility**: list_connections, list_transactions\n\
-                \n\
-                ## Connection Types\n\
-                - **Read-only**: read_only: true in list_connections output\n\
-                - **Read-write**: read_only: false, can use write tools\n\
-                - **Server-level**: server_level: true, no default database; requires `schema` parameter for list_tables/describe_table, or use `db.table` syntax in queries\n\
-                \n\
-                ## Per-Database Pools (Server-Level Connections)\n\
-                For server-level connections, use the `database` parameter to target a specific database:\n\
-                - Pools are created lazily when first accessed\n\
-                - Idle pools are automatically cleaned up after 10 minutes\n\
-                - Each database gets its own connection pool for isolation\n\
                 \n\
                 ## Database-Specific Notes\n\
                 - MySQL: Cross-database queries supported (use `db.table` syntax or `database` parameter)\n\

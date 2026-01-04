@@ -18,7 +18,7 @@ use tracing::info;
 /// Input for the execute tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ExecuteInput {
-    /// Database connection ID from list_connections. Must be a read-write connection (read_only: false).
+    /// Database connection ID from list_connections. Must be a writable connection (writable: true).
     pub connection_id: String,
     /// SQL statement to execute (INSERT, UPDATE, DELETE, or DDL like CREATE/DROP/ALTER/TRUNCATE)
     pub sql: String,
@@ -34,7 +34,7 @@ pub struct ExecuteInput {
     /// Set to true to allow dangerous operations: DROP, TRUNCATE, DELETE without WHERE, UPDATE without WHERE. These are blocked by default to prevent accidental data loss.
     #[serde(default)]
     pub dangerous_operation_allowed: bool,
-    /// Target database name. Required for server-level connections. Optional for database-specific connections.
+    /// Target database name. Optional for server-level connections - omit for server-level operations (CREATE DATABASE, SHOW DATABASES). Required when statement references tables. For database-specific connections, overrides the URL database.
     #[serde(default)]
     pub database: Option<String>,
 }

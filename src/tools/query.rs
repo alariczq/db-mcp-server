@@ -45,7 +45,7 @@ pub struct QueryInput {
     /// Run query within an existing transaction (from begin_transaction). Omit for auto-commit.
     #[serde(default)]
     pub transaction_id: Option<String>,
-    /// Target database name. Required for server-level connections. Optional for database-specific connections (overrides URL database).
+    /// Target database name. Optional for server-level connections - omit for server-level operations (SELECT 1, SHOW DATABASES). Required when query needs database context (SELECT * FROM table). For database-specific connections, overrides the URL database.
     #[serde(default)]
     pub database: Option<String>,
 }
