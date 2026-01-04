@@ -429,6 +429,7 @@ dependencies = [
  "clap",
  "futures-util",
  "humansize",
+ "rand 0.8.5",
  "rmcp",
  "schemars",
  "serde",

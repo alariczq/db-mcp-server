@@ -68,6 +68,7 @@ sqlparser = "0.60"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"
+rand = "0.8"
 
 [[bin]]
 name = "db-mcp-server"

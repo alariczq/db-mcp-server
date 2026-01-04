@@ -14,16 +14,27 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 /// Initialize the tracing subscriber for logging.
 fn init_tracing(config: &Config) {
+    if !config.enable_logs {
+        return;
+    }
+
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
 
     let subscriber = tracing_subscriber::registry().with(filter);
 
     if config.json_logs {
-        subscriber.with(fmt::layer().json()).init();
+        subscriber
+            .with(fmt::layer().json().with_writer(std::io::stderr))
+            .init();
     } else {
         subscriber
-            .with(fmt::layer().with_target(true).with_thread_ids(false))
+            .with(
+                fmt::layer()
+                    .with_target(true)
+                    .with_thread_ids(false)
+                    .with_writer(std::io::stderr),
+            )
             .init();
     }
 }

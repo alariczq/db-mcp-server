@@ -366,12 +366,16 @@ pub struct Config {
     pub transaction_timeout: u64,
 
     /// Log level (trace, debug, info, warn, error)
-    #[arg(long, default_value = "error", env = "MCP_LOG_LEVEL")]
+    #[arg(long, default_value = "info", env = "MCP_LOG_LEVEL")]
     pub log_level: String,
 
     /// Enable JSON logging format
     #[arg(long, env = "MCP_JSON_LOGS")]
     pub json_logs: bool,
+
+    /// Enable logging output (disabled by default to avoid interfering with stdio transport)
+    #[arg(long, env = "MCP_ENABLE_LOGS")]
+    pub enable_logs: bool,
 }
 
 impl Config {
@@ -393,6 +397,7 @@ impl Config {
             transaction_timeout: DEFAULT_TRANSACTION_TIMEOUT_SECS,
             log_level: "info".to_string(),
             json_logs: false,
+            enable_logs: false,
         }
     }
 
