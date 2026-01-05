@@ -152,24 +152,23 @@ db-mcp-server --transport http --database sqlite:data.db --http-host 0.0.0.0 --h
 - **Dangerous operation protection**: DROP, TRUNCATE, DELETE/UPDATE without WHERE require `skip_sql_check: true`
 - **Server-level operations**: Use `database` parameter to target specific database for server-level connections
 
-## Claude Desktop Configuration
+## AI CLI Configuration Examples
 
-Add to your `claude_desktop_config.json`:
+### Claude Code
 
-```json
-{
-  "mcpServers": {
-    "database": {
-      "command": "db-mcp-server",
-      "args": [
-        "--database", "sqlite:/path/to/your.db?writable=true"
-      ]
-    }
-  }
-}
+**Using CLI command:**
+
+```bash
+# Single database
+claude mcp add --transport stdio database -- db-mcp-server --database "sqlite:app.db?writable=true"
+
+# Multiple databases
+claude mcp add --transport stdio database -- db-mcp-server \
+  -d "app=sqlite:app.db?writable=true" \
+  -d "analytics=postgres://user:pass@localhost/analytics"
 ```
 
-Or for multiple databases:
+**Or edit `~/.claude.json` or `.mcp.json` manually:**
 
 ```json
 {
@@ -185,22 +184,50 @@ Or for multiple databases:
 }
 ```
 
-Or using environment variables (single database):
+### Codex
+
+**Using CLI command:**
+
+```bash
+# Single database
+codex mcp add database -- db-mcp-server --database "sqlite:app.db?writable=true"
+
+# Multiple databases
+codex mcp add database -- db-mcp-server \
+  -d "app=sqlite:app.db?writable=true" \
+  -d "analytics=postgres://user:pass@localhost/analytics"
+```
+
+**Or edit `~/.codex/config.toml` manually:**
+
+```toml
+[mcp_servers.database]
+command = "db-mcp-server"
+args = [
+  "-d", "app=sqlite:app.db?writable=true",
+  "-d", "analytics=postgres://user:pass@localhost/analytics"
+]
+```
+
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "database": {
       "command": "db-mcp-server",
-      "env": {
-        "MCP_DATABASE": "mysql://root:password@localhost/mydb?writable=true"
-      }
+      "args": [
+        "-d", "app=sqlite:app.db?writable=true",
+        "-d", "analytics=postgres://user:pass@localhost/analytics"
+      ]
     }
   }
 }
 ```
 
-Or using environment variables (multiple databases, comma-separated):
+Or using environment variables:
 
 ```json
 {
@@ -208,7 +235,7 @@ Or using environment variables (multiple databases, comma-separated):
     "database": {
       "command": "db-mcp-server",
       "env": {
-        "MCP_DATABASE": "app=sqlite:app.db?writable=true,analytics=postgres://user:pass@localhost/analytics,logs=mysql://user:pass@localhost/logs"
+        "MCP_DATABASE": "app=sqlite:app.db?writable=true,analytics=postgres://user:pass@localhost/analytics"
       }
     }
   }
