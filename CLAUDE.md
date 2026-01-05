@@ -127,6 +127,243 @@ db-mcp-server --transport http --database sqlite:data.db
 - Cognitive complexity threshold: 25
 - Too many arguments threshold: 7
 
+**Comment Guidelines**
+
+*Clear code is better than extensive comments. No comments is better than outdated, invalid comments.*
+
+**Core Principles**
+1. **Clean code first**: Refactor unclear code into well-named functions/types before adding comments
+2. **Comments rot**: Every comment is a maintenance burden. Prefer self-documenting code.
+3. **No invalid comments**: Outdated comments are worse than no comments. Delete immediately when code changes.
+4. **WHY, not WHAT**: If you must comment, explain reasoning/invariants, never mechanics.
+
+**When to Use Comments (Decision Tree)**
+
+```
+Is this a public API item? ────YES──→ Use `///` documentation (REQUIRED)
+         │
+         NO
+         ↓
+Is the logic complex/non-obvious? ────NO──→ NO COMMENT (use clear naming)
+         │
+        YES
+         ↓
+Can you refactor into smaller,     ────YES──→ REFACTOR instead of commenting
+well-named functions?
+         │
+         NO
+         ↓
+Does it involve:
+- Subtle invariants (e.g., lock ordering, field constraints)
+- Performance trade-offs (explain why unusual approach)
+- Safety requirements (memory ordering, race conditions)
+- Bug workarounds (link to issue/explanation)
+         │
+        YES──→ ADD COMMENT (keep it brief)
+```
+
+**Required: Public API Documentation**
+Use `///` for all `pub` items: modules, structs, enums, functions, traits, constants, macros.
+- Include `# Errors`, `# Panics`, `# Safety` where applicable
+- Add examples for non-trivial APIs
+- Document each `pub` field
+
+```rust
+/// Manages database connection pools with automatic cleanup.
+pub struct ConnectionManager { ... }
+
+/// Executes a SQL query with optional parameters.
+///
+/// # Errors
+/// Returns `DbError::Timeout` if query exceeds timeout.
+pub async fn query(&self, sql: &str) -> Result<QueryResult> { ... }
+```
+
+**Private Items: Default is NO COMMENT**
+Private functions, structs, enums, fields should have NO comments by default.
+Rely on clear naming and code structure.
+
+```rust
+// NO - Redundant comment
+/// Checks if connection is expired
+fn is_expired(&self) -> bool { ... }
+
+// YES - Clear naming, no comment needed
+fn is_expired(&self) -> bool {
+    self.last_used.elapsed() > TIMEOUT
+}
+```
+
+**When to Comment Private Items**
+Only add comments for private items in these cases:
+
+1. **Subtle Invariants** - Critical constraints that must be maintained
+```rust
+struct Registry {
+    // INVARIANT: active_count == entries.len()
+    entries: Vec<Entry>,
+    active_count: AtomicUsize,
+}
+```
+
+2. **Performance Optimization** - Explain trade-offs for unusual code
+```rust
+fn cleanup(&mut self) {
+    // Use retain() not filter() - runs every 10s, must minimize allocations
+    self.pools.retain(|_, e| !e.is_idle());
+}
+```
+
+3. **Safety Requirements** - Memory ordering, lock ordering, race prevention
+```rust
+impl Drop for Guard {
+    fn drop(&mut self) {
+        // Must decrement BEFORE unlock to prevent race with cleanup task
+        self.count.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+```
+
+4. **Bug Workarounds** - Code looks wrong but is correct due to external issue
+```rust
+// sqlx requires explicit close for MySQL pools (issue #1234)
+pool.close().await;
+```
+
+**Never Comment These**
+- Type conversions: `as u64`, `into()`, `from()`
+- Simple control flow: `if`, `for`, basic `match`
+- Standard patterns: `.map()`, `.filter()`, `?`, `unwrap_or()`
+- Obvious operations: assignments, field access, arithmetic
+- Variable declarations with clear types/names
+- Straightforward function calls
+
+**Inline Comments: Extract Functions Instead**
+If you need inline comments to explain code blocks, extract to named functions.
+
+```rust
+// NO - Inline comment explaining block
+fn process() {
+    // Validate input and convert to internal format
+    let data = input.trim().to_lowercase();
+    if data.is_empty() { return; }
+    ...
+}
+
+// YES - Extract to self-documenting function
+fn process() {
+    let data = validate_and_normalize(input);
+    if data.is_empty() { return; }
+    ...
+}
+```
+
+**Comment Maintenance**
+- Delete outdated comments immediately when code changes
+- Never commit commented-out code (use git history)
+- During code review: challenge every comment - can code be clearer instead?
+- Prefer refactoring over commenting
+
+**Summary: When AI Should Add Comments**
+✅ **Always comment**: Public API items (`pub` + `///`)
+✅ **Sometimes comment**: Private items with invariants/safety/performance trade-offs
+❌ **Never comment**: Standard code, obvious logic, simple private functions
+❌ **Never**: Outdated comments, commented-out code
+
+**Code Simplicity Guidelines**
+
+*YAGNI: You Aren't Gonna Need It. Write only what is needed NOW.*
+
+**Avoid Over-Engineering**
+- Only implement what the user explicitly requested
+- Do NOT add features, abstractions, or flexibility "just in case"
+- Do NOT consider future requirements unless user mentions them
+- Do NOT add compatibility layers unless specifically requested
+- The right amount of code is the MINIMUM needed for the current task
+
+**What NOT to Add (Unless Explicitly Requested)**
+
+1. **Unused Features**
+   - Extra function parameters "for future use"
+   - Optional behaviors that aren't needed now
+   - Configuration options that aren't required
+   - Generic/abstract code when specific code works
+
+2. **Unnecessary Compatibility**
+   - Backward compatibility for code you just wrote
+   - Support for multiple versions/formats when only one is needed
+   - Deprecation warnings when removing unused code
+   - Migration paths when changing new code
+
+3. **Premature Abstractions**
+   - Helper functions used only once
+   - Traits/interfaces with single implementation
+   - Configuration files for hardcoded values
+   - Factories/builders for simple construction
+
+4. **Defensive Programming for Internal Code**
+   - Validation of data from trusted internal functions
+   - Error handling for "impossible" cases
+   - Null/bounds checks when caller guarantees validity
+   - Type conversions when types already match
+
+**Examples**
+
+```rust
+// BAD - Unused flexibility
+fn process_data(data: &[u8], format: OutputFormat, compress: bool, validate: bool) {
+    // User only needs basic processing, why add all these options?
+}
+
+// GOOD - Only what's needed
+fn process_data(data: &[u8]) -> Vec<u8> {
+    // Simple, direct, does the job
+}
+
+// BAD - Premature abstraction
+trait DataProcessor {
+    fn process(&self, data: &[u8]) -> Vec<u8>;
+}
+struct JsonProcessor;
+impl DataProcessor for JsonProcessor { ... }
+
+// GOOD - Direct implementation
+fn process_json(data: &[u8]) -> Vec<u8> { ... }
+
+// BAD - Unnecessary backward compatibility
+fn get_user_name(&self) -> &str { &self.name }
+#[deprecated(note = "use get_user_name")]
+fn getUserName(&self) -> &str { &self.name }  // Why? Code is new!
+
+// GOOD - Just the new function
+fn get_user_name(&self) -> &str { &self.name }
+
+// BAD - Over-validation of internal data
+fn calculate_total(items: &[Item]) -> u64 {
+    assert!(!items.is_empty(), "items cannot be empty");  // Trust caller
+    items.iter().map(|i| i.price).sum()
+}
+
+// GOOD - Trust internal callers
+fn calculate_total(items: &[Item]) -> u64 {
+    items.iter().map(|i| i.price).sum()
+}
+```
+
+**When Simplicity Rules Don't Apply**
+- Public API: Do add proper validation and error handling
+- User explicitly requests flexibility/compatibility
+- Security-critical code: Validate all inputs
+- Code interfacing with external systems/users
+
+**Summary**
+✅ Write the simplest code that solves the current problem
+✅ Trust internal code and known invariants
+✅ Delete unused code completely (no deprecation, no compatibility shims)
+❌ Don't add "might need later" features
+❌ Don't add compatibility unless explicitly requested
+❌ Don't create abstractions for single use cases
+
 ## Configuration
 
 **Connection String Format**
