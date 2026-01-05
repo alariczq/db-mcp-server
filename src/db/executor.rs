@@ -205,14 +205,20 @@ mod mysql {
         row_limit: u32,
         query_timeout: Duration,
     ) -> DbResult<Vec<MySqlRow>> {
-        let mut query = sqlx::query(sql);
-        for param in params {
-            query = bind_param(query, param);
-        }
-
+        // When params is empty, use raw SQL to avoid prepared statement issues
         let fetch_limit = row_limit as usize + 1;
-        let stream = query.fetch(pool);
-        let rows_future = stream.take(fetch_limit).collect::<Vec<_>>();
+        let rows_future = if params.is_empty() {
+            use sqlx::Executor;
+            let stream = pool.fetch(sql);
+            stream.take(fetch_limit).collect::<Vec<_>>()
+        } else {
+            let mut query = sqlx::query(sql);
+            for param in params {
+                query = bind_param(query, param);
+            }
+            let stream = query.fetch(pool);
+            stream.take(fetch_limit).collect::<Vec<_>>()
+        };
 
         match timeout(query_timeout, rows_future).await {
             Ok(results) => {
@@ -235,12 +241,20 @@ mod mysql {
         params: &[QueryParam],
         query_timeout: Duration,
     ) -> DbResult<u64> {
-        let mut query = sqlx::query(sql);
-        for param in params {
-            query = bind_param(query, param);
-        }
+        // When params is empty, execute raw SQL directly to avoid prepared statement issues
+        // (some SQL like CREATE PROCEDURE doesn't support prepared statements)
+        let result = if params.is_empty() {
+            use sqlx::Executor;
+            timeout(query_timeout, pool.execute(sql)).await
+        } else {
+            let mut query = sqlx::query(sql);
+            for param in params {
+                query = bind_param(query, param);
+            }
+            timeout(query_timeout, query.execute(pool)).await
+        };
 
-        match timeout(query_timeout, query.execute(pool)).await {
+        match result {
             Ok(Ok(r)) => Ok(r.rows_affected()),
             Ok(Err(e)) => Err(DbError::from(e)),
             Err(_) => Err(DbError::timeout(
@@ -277,14 +291,20 @@ mod postgres {
         row_limit: u32,
         query_timeout: Duration,
     ) -> DbResult<Vec<PgRow>> {
-        let mut query = sqlx::query(sql);
-        for param in params {
-            query = bind_param(query, param);
-        }
-
+        // When params is empty, use raw SQL to avoid prepared statement issues
         let fetch_limit = row_limit as usize + 1;
-        let stream = query.fetch(pool);
-        let rows_future = stream.take(fetch_limit).collect::<Vec<_>>();
+        let rows_future = if params.is_empty() {
+            use sqlx::Executor;
+            let stream = pool.fetch(sql);
+            stream.take(fetch_limit).collect::<Vec<_>>()
+        } else {
+            let mut query = sqlx::query(sql);
+            for param in params {
+                query = bind_param(query, param);
+            }
+            let stream = query.fetch(pool);
+            stream.take(fetch_limit).collect::<Vec<_>>()
+        };
 
         match timeout(query_timeout, rows_future).await {
             Ok(results) => {
@@ -307,12 +327,19 @@ mod postgres {
         params: &[QueryParam],
         query_timeout: Duration,
     ) -> DbResult<u64> {
-        let mut query = sqlx::query(sql);
-        for param in params {
-            query = bind_param(query, param);
-        }
+        // When params is empty, execute raw SQL directly to avoid prepared statement issues
+        let result = if params.is_empty() {
+            use sqlx::Executor;
+            timeout(query_timeout, pool.execute(sql)).await
+        } else {
+            let mut query = sqlx::query(sql);
+            for param in params {
+                query = bind_param(query, param);
+            }
+            timeout(query_timeout, query.execute(pool)).await
+        };
 
-        match timeout(query_timeout, query.execute(pool)).await {
+        match result {
             Ok(Ok(r)) => Ok(r.rows_affected()),
             Ok(Err(e)) => Err(DbError::from(e)),
             Err(_) => Err(DbError::timeout(
@@ -349,14 +376,20 @@ mod sqlite {
         row_limit: u32,
         query_timeout: Duration,
     ) -> DbResult<Vec<SqliteRow>> {
-        let mut query = sqlx::query(sql);
-        for param in params {
-            query = bind_param(query, param);
-        }
-
+        // When params is empty, use raw SQL to avoid prepared statement issues
         let fetch_limit = row_limit as usize + 1;
-        let stream = query.fetch(pool);
-        let rows_future = stream.take(fetch_limit).collect::<Vec<_>>();
+        let rows_future = if params.is_empty() {
+            use sqlx::Executor;
+            let stream = pool.fetch(sql);
+            stream.take(fetch_limit).collect::<Vec<_>>()
+        } else {
+            let mut query = sqlx::query(sql);
+            for param in params {
+                query = bind_param(query, param);
+            }
+            let stream = query.fetch(pool);
+            stream.take(fetch_limit).collect::<Vec<_>>()
+        };
 
         match timeout(query_timeout, rows_future).await {
             Ok(results) => {
@@ -379,12 +412,19 @@ mod sqlite {
         params: &[QueryParam],
         query_timeout: Duration,
     ) -> DbResult<u64> {
-        let mut query = sqlx::query(sql);
-        for param in params {
-            query = bind_param(query, param);
-        }
+        // When params is empty, execute raw SQL directly to avoid prepared statement issues
+        let result = if params.is_empty() {
+            use sqlx::Executor;
+            timeout(query_timeout, pool.execute(sql)).await
+        } else {
+            let mut query = sqlx::query(sql);
+            for param in params {
+                query = bind_param(query, param);
+            }
+            timeout(query_timeout, query.execute(pool)).await
+        };
 
-        match timeout(query_timeout, query.execute(pool)).await {
+        match result {
             Ok(Ok(r)) => Ok(r.rows_affected()),
             Ok(Err(e)) => Err(DbError::from(e)),
             Err(_) => Err(DbError::timeout(

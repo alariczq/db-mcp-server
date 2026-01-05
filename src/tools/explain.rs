@@ -39,7 +39,7 @@ pub struct ExplainInput {
     /// Output format: "json" returns structured data, "table" returns ASCII table, "markdown" returns markdown table
     #[serde(default)]
     pub format: OutputFormat,
-    /// Target database name. Optional for server-level connections - omit for server-level operations (EXPLAIN SELECT 1). Required when query references tables.
+    /// Target database name (optional)
     #[serde(default)]
     pub database: Option<String>,
 }

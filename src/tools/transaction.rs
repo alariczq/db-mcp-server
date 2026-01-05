@@ -27,7 +27,7 @@ pub struct BeginTransactionInput {
     /// Transaction timeout in seconds. Auto-rollback if exceeded. Default: 60, max: 300
     #[serde(default)]
     pub timeout_secs: Option<u32>,
-    /// Target database for transaction. Optional for server-level connections - omit for server-level transactions. Specify to create transaction on a specific database.
+    /// Target database name (optional)
     #[serde(default)]
     pub database: Option<String>,
 }

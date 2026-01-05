@@ -47,7 +47,7 @@ pub enum DbError {
     Internal { message: String },
 
     #[error(
-        "Dangerous operation blocked: {operation}. {reason}. To proceed, set 'dangerous_operation_allowed' to true."
+        "Dangerous operation blocked: {operation}. {reason}. To proceed, set 'skip_sql_check' to true."
     )]
     DangerousOperationBlocked { operation: String, reason: String },
 

@@ -143,7 +143,7 @@ async fn fuzz_write_operations() {
             params: vec![],
             timeout_secs: Some(5),
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         };
 
@@ -174,7 +174,7 @@ async fn fuzz_dangerous_operations_blocked() {
             params: vec![],
             timeout_secs: Some(1),
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         };
 
@@ -211,7 +211,7 @@ async fn fuzz_transaction_workflow() {
         params: vec![],
         timeout_secs: Some(5),
         transaction_id: Some(tx_id.clone()),
-        dangerous_operation_allowed: false,
+        skip_sql_check: false,
         database: None,
     };
 
@@ -264,7 +264,7 @@ async fn fuzz_transaction_rollback() {
         params: vec![],
         timeout_secs: Some(5),
         transaction_id: Some(tx_id.clone()),
-        dangerous_operation_allowed: true,
+        skip_sql_check: true,
         database: None,
     };
 

@@ -112,7 +112,7 @@ db-mcp-server --transport http --database sqlite:data.db
 **Dangerous Operation Guard**
 - AST-based detection prevents bypass via formatting tricks or SQL comments
 - Blocked operations: DROP DATABASE/TABLE/INDEX, ALTER TABLE DROP COLUMN, TRUNCATE, DELETE/UPDATE without WHERE
-- Requires explicit `dangerous_operation_allowed: true` flag
+- Requires explicit `skip_sql_check: true` flag
 
 ## Code Style
 

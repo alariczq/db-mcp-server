@@ -34,7 +34,7 @@ async fn setup_test_handler() -> (WriteToolHandler, String) {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -58,7 +58,7 @@ async fn test_drop_table_blocked_by_default() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -71,7 +71,7 @@ async fn test_drop_table_blocked_by_default() {
         err
     );
     assert!(
-        err.to_string().contains("dangerous_operation_allowed"),
+        err.to_string().contains("skip_sql_check"),
         "Error should mention how to bypass: {}",
         err
     );
@@ -88,7 +88,7 @@ async fn test_drop_database_blocked_by_default() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -113,7 +113,7 @@ async fn test_delete_without_where_blocked_by_default() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -138,7 +138,7 @@ async fn test_update_without_where_blocked_by_default() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -163,7 +163,7 @@ async fn test_truncate_blocked_by_default() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -192,7 +192,7 @@ async fn test_drop_table_allowed_with_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;
@@ -216,7 +216,7 @@ async fn test_delete_without_where_allowed_with_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -229,7 +229,7 @@ async fn test_delete_without_where_allowed_with_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;
@@ -254,7 +254,7 @@ async fn test_update_without_where_allowed_with_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -267,7 +267,7 @@ async fn test_update_without_where_allowed_with_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;
@@ -295,7 +295,7 @@ async fn test_insert_works_without_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -320,7 +320,7 @@ async fn test_delete_with_where_works_without_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -333,7 +333,7 @@ async fn test_delete_with_where_works_without_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -358,7 +358,7 @@ async fn test_update_with_where_works_without_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -371,7 +371,7 @@ async fn test_update_with_where_works_without_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -395,7 +395,7 @@ async fn test_create_table_works_without_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -418,7 +418,7 @@ async fn test_alter_table_works_without_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -445,7 +445,7 @@ async fn test_comment_before_dangerous_operation_still_blocked() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -468,7 +468,7 @@ async fn test_string_literal_with_dangerous_keyword_not_blocked() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -492,7 +492,7 @@ async fn test_multi_statement_with_dangerous_blocked() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -519,7 +519,7 @@ async fn test_alter_table_drop_column_blocked_by_default() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -533,7 +533,7 @@ async fn test_alter_table_drop_column_blocked_by_default() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -559,7 +559,7 @@ async fn test_alter_table_drop_column_allowed_with_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -573,7 +573,7 @@ async fn test_alter_table_drop_column_allowed_with_confirmation() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;
@@ -600,7 +600,7 @@ async fn test_select_blocked_in_execute() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;
@@ -630,7 +630,7 @@ async fn test_show_tables_blocked_in_execute() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await;

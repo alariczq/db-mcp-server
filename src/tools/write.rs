@@ -31,10 +31,21 @@ pub struct ExecuteInput {
     /// Run within an existing transaction (from begin_transaction). Omit for auto-commit.
     #[serde(default)]
     pub transaction_id: Option<String>,
-    /// Set to true to allow dangerous operations: DROP, TRUNCATE, DELETE without WHERE, UPDATE without WHERE. These are blocked by default to prevent accidental data loss.
+    /// Skip SQL validation checks (read-only detection and dangerous operation detection).
+    ///
+    /// ONLY use when you encounter sqlparser validation errors for database-specific syntax.
+    /// Common cases requiring this flag:
+    /// - MySQL: CREATE PROCEDURE, CREATE FUNCTION, CREATE EVENT, CREATE TRIGGER
+    /// - PostgreSQL: CREATE FUNCTION with procedural languages (PL/pgSQL)
+    /// - Database-specific DDL extensions not supported by sqlparser
+    ///
+    /// When enabled, ALL safety checks are bypassed (read-only check + dangerous operation check).
+    /// DO NOT set to true by default or for standard SQL (INSERT/UPDATE/DELETE/CREATE TABLE).
+    ///
+    /// IMPORTANT: Always ask user for confirmation before setting this to true.
     #[serde(default)]
-    pub dangerous_operation_allowed: bool,
-    /// Target database name. Optional for server-level connections - omit for server-level operations (CREATE DATABASE, SHOW DATABASES). Required when statement references tables. For database-specific connections, overrides the URL database.
+    pub skip_sql_check: bool,
+    /// Target database name (optional)
     #[serde(default)]
     pub database: Option<String>,
 }
@@ -91,14 +102,15 @@ impl WriteToolHandler {
             ));
         }
 
-        if let ReadOnlyCheckResult::ReadOnlyOperation = check_readonly_sql(&input.sql)? {
-            return Err(DbError::invalid_input(
-                "This is a read-only operation (SELECT, SHOW, DESCRIBE, etc.). Use the 'query' tool instead of 'execute' for read operations.",
-            ));
-        }
+        // Skip SQL validation if requested (useful for unsupported SQL dialects)
+        if !input.skip_sql_check {
+            if let ReadOnlyCheckResult::ReadOnlyOperation = check_readonly_sql(&input.sql)? {
+                return Err(DbError::invalid_input(
+                    "This is a read-only operation (SELECT, SHOW, DESCRIBE, etc.). Use the 'query' tool instead of 'execute' for read operations.",
+                ));
+            }
 
-        if let DangerousOperationResult::Dangerous(op_type) = check_dangerous_sql(&input.sql)? {
-            if !input.dangerous_operation_allowed {
+            if let DangerousOperationResult::Dangerous(op_type) = check_dangerous_sql(&input.sql)? {
                 return Err(DbError::dangerous_operation_blocked(
                     op_type.operation_name(),
                     op_type.reason(),
@@ -176,7 +188,7 @@ mod tests {
         assert_eq!(input.connection_id, "conn1");
         assert!(input.params.is_empty());
         assert!(input.timeout_secs.is_none());
-        assert!(!input.dangerous_operation_allowed);
+        assert!(!input.skip_sql_check);
     }
 
     #[test]
@@ -198,11 +210,11 @@ mod tests {
         let json = r#"{
             "connection_id": "conn1",
             "sql": "DROP TABLE users",
-            "dangerous_operation_allowed": true
+            "skip_sql_check": true
         }"#;
 
         let input: ExecuteInput = serde_json::from_str(json).unwrap();
-        assert!(input.dangerous_operation_allowed);
+        assert!(input.skip_sql_check);
     }
 
     #[test]

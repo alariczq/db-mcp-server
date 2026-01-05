@@ -45,7 +45,7 @@ pub struct QueryInput {
     /// Run query within an existing transaction (from begin_transaction). Omit for auto-commit.
     #[serde(default)]
     pub transaction_id: Option<String>,
-    /// Target database name. Optional for server-level connections - omit for server-level operations (SELECT 1, SHOW DATABASES). Required when query needs database context (SELECT * FROM table). For database-specific connections, overrides the URL database.
+    /// Target database name (optional)
     #[serde(default)]
     pub database: Option<String>,
 }
@@ -174,7 +174,9 @@ impl QueryToolHandler {
     /// Validates that the SQL is a read-only statement before execution.
     /// Write operations are rejected with clear error messages.
     pub async fn query(&self, input: QueryInput) -> DbResult<QueryOutput> {
-        sql_validator::validate_readonly(&input.sql)?;
+        // Get database type for dialect-specific SQL parsing
+        let config = self.connection_manager.get_config(&input.connection_id).await?;
+        sql_validator::validate_readonly(&input.sql, config.db_type)?;
 
         let format = input.format;
         let limit_warning = if let Some(requested_limit) = input.limit {

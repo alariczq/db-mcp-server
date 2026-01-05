@@ -46,7 +46,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;
@@ -63,7 +63,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -78,7 +78,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -130,7 +130,7 @@ async fn test_mysql_utf8_chinese_characters() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;
@@ -171,7 +171,7 @@ async fn test_mysql_table_comment_utf8() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;
@@ -186,7 +186,7 @@ async fn test_mysql_table_comment_utf8() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         })
         .await
@@ -261,7 +261,7 @@ async fn test_mysql_table_comment_utf8() {
             params: vec![],
             timeout_secs: None,
             transaction_id: None,
-            dangerous_operation_allowed: true,
+            skip_sql_check: true,
             database: None,
         })
         .await;

@@ -149,7 +149,7 @@ db-mcp-server --transport http --database sqlite:data.db --http-host 0.0.0.0 --h
 - **Parameterized queries**: Use `?` or `$1, $2, ...` placeholders with `params` array
 - **Output formatting**: `query` and `explain` support `format` parameter (json, table, markdown)
 - **Transaction workflow**: `begin_transaction` → `query`/`execute` with `transaction_id` → `commit`/`rollback`
-- **Dangerous operation protection**: DROP, TRUNCATE, DELETE/UPDATE without WHERE require `dangerous_operation_allowed: true`
+- **Dangerous operation protection**: DROP, TRUNCATE, DELETE/UPDATE without WHERE require `skip_sql_check: true`
 - **Server-level operations**: Use `database` parameter to target specific database for server-level connections
 
 ## Claude Desktop Configuration

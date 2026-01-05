@@ -16,7 +16,7 @@ use tracing::info;
 pub struct ListTablesInput {
     /// Database connection ID from list_connections
     pub connection_id: String,
-    /// Database name. Required for server-level connections (without database in URL).
+    /// Target database name (optional)
     #[serde(default)]
     pub database: Option<String>,
     /// Include views in the result. Default: true
@@ -165,7 +165,7 @@ pub struct DescribeTableInput {
     pub connection_id: String,
     /// Name of the table to describe
     pub table_name: String,
-    /// Database name containing the table. Required for server-level connections (without database in URL).
+    /// Target database name (optional)
     #[serde(default)]
     pub database: Option<String>,
 }

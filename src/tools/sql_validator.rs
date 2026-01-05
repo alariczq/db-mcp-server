@@ -10,8 +10,9 @@
 //! tricks or SQL dialect variations.
 
 use crate::error::{DbError, DbResult};
+use crate::models::DatabaseType;
 use sqlparser::ast::Statement;
-use sqlparser::dialect::GenericDialect;
+use sqlparser::dialect::{Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect};
 use sqlparser::parser::Parser;
 
 /// Type of SQL statement detected by the validator.
@@ -49,29 +50,44 @@ mod error_messages {
     pub const PARSE_ERROR: &str = "Failed to parse SQL statement.";
 }
 
+/// Get the appropriate SQL dialect for the given database type.
+fn get_dialect(db_type: DatabaseType) -> Box<dyn Dialect> {
+    match db_type {
+        DatabaseType::PostgreSQL => Box::new(PostgreSqlDialect {}),
+        DatabaseType::MySQL => Box::new(MySqlDialect {}),
+        DatabaseType::SQLite => Box::new(SQLiteDialect {}),
+    }
+}
+
 /// Validate SQL for read-only execution in the query tool.
 ///
 /// Returns `Ok(())` if the statement is allowed (SELECT, SHOW, DESCRIBE, etc.),
 /// or `Err(DbError::Permission)` if the statement is a write operation.
 ///
-/// Uses sqlparser for accurate AST-based validation, preventing any bypass
-/// through formatting tricks or SQL dialect variations.
+/// Uses sqlparser for accurate AST-based validation with database-specific dialect support,
+/// preventing any bypass through formatting tricks or SQL dialect variations.
+///
+/// # Arguments
+///
+/// * `sql` - The SQL statement to validate
+/// * `db_type` - The database type to use for parsing (determines SQL dialect)
 ///
 /// # Examples
 ///
 /// ```
 /// use db_mcp_server::tools::sql_validator::validate_readonly;
+/// use db_mcp_server::models::DatabaseType;
 ///
 /// // SELECT is allowed
-/// assert!(validate_readonly("SELECT * FROM users").is_ok());
+/// assert!(validate_readonly("SELECT * FROM users", DatabaseType::PostgreSQL).is_ok());
 ///
 /// // INSERT is blocked
-/// assert!(validate_readonly("INSERT INTO users VALUES (1)").is_err());
+/// assert!(validate_readonly("INSERT INTO users VALUES (1)", DatabaseType::PostgreSQL).is_err());
 /// ```
-pub fn validate_readonly(sql: &str) -> DbResult<()> {
-    let dialect = GenericDialect {};
+pub fn validate_readonly(sql: &str, db_type: DatabaseType) -> DbResult<()> {
+    let dialect = get_dialect(db_type);
 
-    let statements = Parser::parse_sql(&dialect, sql).map_err(|e| {
+    let statements = Parser::parse_sql(dialect.as_ref(), sql).map_err(|e| {
         DbError::invalid_input(format!("{} Error: {}", error_messages::PARSE_ERROR, e))
     })?;
 
@@ -250,259 +266,13 @@ fn classify_statement(stmt: &Statement) -> (SqlStatementType, &'static str) {
     }
 }
 
-/// Determine the statement type from SQL text.
-///
-/// This function parses the SQL and classifies the first statement.
-/// For validation, use `validate_readonly()` instead.
-pub fn get_statement_type(sql: &str) -> SqlStatementType {
-    let dialect = GenericDialect {};
-
-    match Parser::parse_sql(&dialect, sql) {
-        Ok(statements) if !statements.is_empty() => {
-            let (stmt_type, _) = classify_statement(&statements[0]);
-            stmt_type
-        }
-        _ => SqlStatementType::Unknown,
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // =========================================================================
-    // Tests for get_statement_type - DML Write (US1)
-    // =========================================================================
-
-    #[test]
-    fn test_statement_type_insert() {
-        assert_eq!(
-            get_statement_type("INSERT INTO users VALUES (1)"),
-            SqlStatementType::DmlWrite
-        );
-    }
-
-    #[test]
-    fn test_statement_type_update() {
-        assert_eq!(
-            get_statement_type("UPDATE users SET name = 'test'"),
-            SqlStatementType::DmlWrite
-        );
-    }
-
-    #[test]
-    fn test_statement_type_delete() {
-        assert_eq!(
-            get_statement_type("DELETE FROM users WHERE id = 1"),
-            SqlStatementType::DmlWrite
-        );
-    }
-
-    #[test]
-    fn test_statement_type_merge() {
-        // sqlparser supports MERGE syntax
-        let sql = "MERGE INTO target USING source ON target.id = source.id WHEN MATCHED THEN UPDATE SET target.val = source.val";
-        assert_eq!(get_statement_type(sql), SqlStatementType::DmlWrite);
-    }
-
-    #[test]
-    fn test_statement_type_select() {
-        assert_eq!(
-            get_statement_type("SELECT * FROM users"),
-            SqlStatementType::Select
-        );
-    }
-
-    #[test]
-    fn test_statement_type_case_insensitive() {
-        assert_eq!(
-            get_statement_type("insert into users values (1)"),
-            SqlStatementType::DmlWrite
-        );
-        assert_eq!(
-            get_statement_type("INSERT INTO users VALUES (1)"),
-            SqlStatementType::DmlWrite
-        );
-        assert_eq!(
-            get_statement_type("Insert Into users Values (1)"),
-            SqlStatementType::DmlWrite
-        );
-    }
-
-    // =========================================================================
-    // Tests for get_statement_type - DDL (US2)
-    // =========================================================================
-
-    #[test]
-    fn test_statement_type_create() {
-        assert_eq!(
-            get_statement_type("CREATE TABLE test (id INT)"),
-            SqlStatementType::Ddl
-        );
-    }
-
-    #[test]
-    fn test_statement_type_drop() {
-        assert_eq!(
-            get_statement_type("DROP TABLE users"),
-            SqlStatementType::Ddl
-        );
-    }
-
-    #[test]
-    fn test_statement_type_alter() {
-        assert_eq!(
-            get_statement_type("ALTER TABLE users ADD COLUMN age INT"),
-            SqlStatementType::Ddl
-        );
-    }
-
-    #[test]
-    fn test_statement_type_truncate() {
-        assert_eq!(
-            get_statement_type("TRUNCATE TABLE users"),
-            SqlStatementType::Ddl
-        );
-    }
-
-    // =========================================================================
-    // Tests for get_statement_type - Transaction
-    // =========================================================================
-
-    #[test]
-    fn test_statement_type_begin() {
-        // sqlparser uses START TRANSACTION
-        assert_eq!(
-            get_statement_type("START TRANSACTION"),
-            SqlStatementType::Transaction
-        );
-    }
-
-    #[test]
-    fn test_statement_type_commit() {
-        assert_eq!(get_statement_type("COMMIT"), SqlStatementType::Transaction);
-    }
-
-    #[test]
-    fn test_statement_type_rollback() {
-        assert_eq!(
-            get_statement_type("ROLLBACK"),
-            SqlStatementType::Transaction
-        );
-    }
-
-    // =========================================================================
-    // Tests for get_statement_type - Procedure
-    // =========================================================================
-
-    #[test]
-    fn test_statement_type_call() {
-        assert_eq!(
-            get_statement_type("CALL my_procedure()"),
-            SqlStatementType::ProcedureCall
-        );
-    }
-
-    #[test]
-    fn test_statement_type_execute() {
-        assert_eq!(
-            get_statement_type("EXECUTE my_procedure"),
-            SqlStatementType::ProcedureCall
-        );
-    }
-
-    // =========================================================================
-    // Tests for get_statement_type - Administrative
-    // =========================================================================
-
-    #[test]
-    fn test_statement_type_grant() {
-        assert_eq!(
-            get_statement_type("GRANT SELECT ON users TO role1"),
-            SqlStatementType::Administrative
-        );
-    }
-
-    #[test]
-    fn test_statement_type_vacuum() {
-        assert_eq!(
-            get_statement_type("VACUUM"),
-            SqlStatementType::Administrative
-        );
-    }
-
-    // =========================================================================
-    // Tests for get_statement_type - Read operations
-    // =========================================================================
-
-    #[test]
-    fn test_statement_type_with_cte() {
-        assert_eq!(
-            get_statement_type("WITH cte AS (SELECT 1) SELECT * FROM cte"),
-            SqlStatementType::Select
-        );
-    }
-
-    #[test]
-    fn test_statement_type_show() {
-        assert_eq!(get_statement_type("SHOW TABLES"), SqlStatementType::Select);
-    }
-
-    #[test]
-    fn test_statement_type_describe() {
-        assert_eq!(
-            get_statement_type("DESCRIBE users"),
-            SqlStatementType::Select
-        );
-    }
-
-    // =========================================================================
-    // Tests for EXPLAIN handling
-    // =========================================================================
-
-    #[test]
-    fn test_explain_select_allowed() {
-        assert_eq!(
-            get_statement_type("EXPLAIN SELECT * FROM users"),
-            SqlStatementType::Select
-        );
-    }
-
-    #[test]
-    fn test_explain_insert_blocked() {
-        assert_eq!(
-            get_statement_type("EXPLAIN INSERT INTO users VALUES (1)"),
-            SqlStatementType::DmlWrite
-        );
-    }
-
-    #[test]
-    fn test_explain_analyze_select() {
-        assert_eq!(
-            get_statement_type("EXPLAIN ANALYZE SELECT * FROM users"),
-            SqlStatementType::Select
-        );
-    }
-
-    // =========================================================================
-    // Tests for SQL with comments (sqlparser handles this correctly)
-    // =========================================================================
-
-    #[test]
-    fn test_comment_before_select() {
-        assert_eq!(
-            get_statement_type("-- comment\nSELECT 1"),
-            SqlStatementType::Select
-        );
-    }
-
-    #[test]
-    fn test_comment_before_insert() {
-        assert_eq!(
-            get_statement_type("/* comment */ INSERT INTO users VALUES (1)"),
-            SqlStatementType::DmlWrite
-        );
-    }
+    // Use PostgreSQL as default test database type
+    const TEST_DB_TYPE: DatabaseType = DatabaseType::PostgreSQL;
 
     // =========================================================================
     // Tests for validate_readonly
@@ -510,12 +280,12 @@ mod tests {
 
     #[test]
     fn test_validate_readonly_select_ok() {
-        assert!(validate_readonly("SELECT * FROM users").is_ok());
+        assert!(validate_readonly("SELECT * FROM users", TEST_DB_TYPE).is_ok());
     }
 
     #[test]
     fn test_validate_readonly_insert_error() {
-        let result = validate_readonly("INSERT INTO users VALUES (1)");
+        let result = validate_readonly("INSERT INTO users VALUES (1)", TEST_DB_TYPE);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, DbError::Permission { .. }));
@@ -523,19 +293,19 @@ mod tests {
 
     #[test]
     fn test_validate_readonly_update_error() {
-        let result = validate_readonly("UPDATE users SET name = 'test'");
+        let result = validate_readonly("UPDATE users SET name = 'test'", TEST_DB_TYPE);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_readonly_create_error() {
-        let result = validate_readonly("CREATE TABLE test (id INT)");
+        let result = validate_readonly("CREATE TABLE test (id INT)", TEST_DB_TYPE);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_readonly_drop_error() {
-        let result = validate_readonly("DROP TABLE users");
+        let result = validate_readonly("DROP TABLE users", TEST_DB_TYPE);
         assert!(result.is_err());
     }
 
@@ -545,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_error_message_dml_contains_execute() {
-        let result = validate_readonly("INSERT INTO users VALUES (1)");
+        let result = validate_readonly("INSERT INTO users VALUES (1)", TEST_DB_TYPE);
         let err = result.unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -557,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_error_message_ddl_contains_schema() {
-        let result = validate_readonly("CREATE TABLE test (id INT)");
+        let result = validate_readonly("CREATE TABLE test (id INT)", TEST_DB_TYPE);
         let err = result.unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -569,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_error_message_transaction_contains_tool() {
-        let result = validate_readonly("COMMIT");
+        let result = validate_readonly("COMMIT", TEST_DB_TYPE);
         let err = result.unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -590,40 +360,40 @@ mod tests {
             FROM users u
             WHERE u.id IN (SELECT user_id FROM active_users)
         "#;
-        assert!(validate_readonly(sql).is_ok());
+        assert!(validate_readonly(sql, TEST_DB_TYPE).is_ok());
     }
 
     #[test]
     fn test_select_with_union() {
         let sql = "SELECT a FROM t1 UNION ALL SELECT b FROM t2";
-        assert!(validate_readonly(sql).is_ok());
+        assert!(validate_readonly(sql, TEST_DB_TYPE).is_ok());
     }
 
     #[test]
     fn test_multiple_statements_blocked() {
         // If any statement is a write, the whole thing should be blocked
         let sql = "SELECT 1; INSERT INTO users VALUES (1)";
-        assert!(validate_readonly(sql).is_err());
+        assert!(validate_readonly(sql, TEST_DB_TYPE).is_err());
     }
 
     #[test]
     fn test_insert_select_blocked() {
         // INSERT ... SELECT should be blocked even though it contains SELECT
         let sql = "INSERT INTO archive SELECT * FROM users WHERE created_at < '2020-01-01'";
-        assert!(validate_readonly(sql).is_err());
+        assert!(validate_readonly(sql, TEST_DB_TYPE).is_err());
     }
 
     #[test]
     fn test_update_with_subquery_blocked() {
         let sql = "UPDATE users SET status = 'inactive' WHERE id IN (SELECT id FROM old_users)";
-        assert!(validate_readonly(sql).is_err());
+        assert!(validate_readonly(sql, TEST_DB_TYPE).is_err());
     }
 
     #[test]
     fn test_delete_with_join_blocked() {
         let sql = "DELETE FROM users USING old_users WHERE users.id = old_users.id";
-        // This might not parse with GenericDialect, so just check it's not allowed
-        let result = validate_readonly(sql);
+        // This might not parse with all dialects, so just check it's not allowed
+        let result = validate_readonly(sql, TEST_DB_TYPE);
         // Either parse error or permission error is acceptable
         assert!(result.is_err());
     }

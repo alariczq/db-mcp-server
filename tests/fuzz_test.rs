@@ -176,7 +176,7 @@ async fn fuzz_execute_tool_dangerous_operations() {
             params: vec![],
             timeout_secs: Some(1),
             transaction_id: None,
-            dangerous_operation_allowed: false,
+            skip_sql_check: false,
             database: None,
         };
 
