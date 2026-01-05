@@ -30,7 +30,7 @@ cargo build --release
 
 ## Usage
 
-### Basic Examples
+### Single Database
 
 ```bash
 # SQLite (read-only)
@@ -47,16 +47,46 @@ db-mcp-server --database postgres://user:pass@localhost:5432?writable=true
 
 # MySQL with write access
 db-mcp-server --database mysql://user:pass@localhost/mydb?writable=true
-
-# Multiple databases
-db-mcp-server -d db1=sqlite:one.db -d db2=postgres://localhost/two
-
-# HTTP mode (with SSE)
-db-mcp-server --transport http --database sqlite:data.db
-
-# HTTP mode with custom host/port
-db-mcp-server --transport http --database sqlite:data.db --http-host 0.0.0.0 --http-port 3000
 ```
+
+### Multiple Databases
+
+你可以通过以下三种方式配置多个数据库：
+
+**方式 1：命令行重复 `-d` 参数**
+
+```bash
+# 使用默认 ID（从数据库名自动推导）
+db-mcp-server -d sqlite:one.db -d postgres://localhost/two
+
+# 使用自定义 ID（推荐）
+db-mcp-server -d app=sqlite:app.db?writable=true -d analytics=postgres://user:pass@localhost/analytics
+
+# 混合使用
+db-mcp-server \
+  -d main=sqlite:main.db?writable=true \
+  -d reports=mysql://user:pass@localhost/reports \
+  -d logs=postgres://user:pass@localhost/logs?writable=true
+```
+
+**方式 2：环境变量（逗号分隔）**
+
+```bash
+# 单个数据库
+export MCP_DATABASE="sqlite:data.db?writable=true"
+db-mcp-server
+
+# 多个数据库
+export MCP_DATABASE="\
+app=sqlite:app.db?writable=true,\
+analytics=postgres://user:pass@localhost/analytics,\
+logs=mysql://user:pass@localhost/logs?writable=true"
+db-mcp-server
+```
+
+**方式 3：Claude Desktop 配置**
+
+见下方 [Claude Desktop Configuration](#claude-desktop-configuration) 部分。
 
 ### Connection String Format
 
@@ -74,6 +104,21 @@ postgres://user:pass@host/database?writable=true
 mysql://user:pass@host:port/database
 mysql://user:pass@host:3306                       # server-level
 mysql://user:pass@host/database?writable=true
+
+# 命名连接（多数据库时推荐）
+id=<connection_string>
+app=sqlite:app.db?writable=true
+analytics=postgres://user:pass@localhost/analytics
+```
+
+### HTTP Mode
+
+```bash
+# HTTP mode (with SSE)
+db-mcp-server --transport http --database sqlite:data.db
+
+# HTTP mode with custom host/port
+db-mcp-server --transport http --database sqlite:data.db --http-host 0.0.0.0 --http-port 3000
 ```
 
 ## MCP Tools
@@ -103,7 +148,6 @@ mysql://user:pass@host/database?writable=true
 
 - **Parameterized queries**: Use `?` or `$1, $2, ...` placeholders with `params` array
 - **Output formatting**: `query` and `explain` support `format` parameter (json, table, markdown)
-- **Context control**: Use `-A`, `-B`, `-C` parameters for context lines around query results
 - **Transaction workflow**: `begin_transaction` → `query`/`execute` with `transaction_id` → `commit`/`rollback`
 - **Dangerous operation protection**: DROP, TRUNCATE, DELETE/UPDATE without WHERE require `dangerous_operation_allowed: true`
 - **Server-level operations**: Use `database` parameter to target specific database for server-level connections
@@ -141,7 +185,7 @@ Or for multiple databases:
 }
 ```
 
-Or using environment variables:
+Or using environment variables (single database):
 
 ```json
 {
@@ -150,6 +194,21 @@ Or using environment variables:
       "command": "db-mcp-server",
       "env": {
         "MCP_DATABASE": "mysql://root:password@localhost/mydb?writable=true"
+      }
+    }
+  }
+}
+```
+
+Or using environment variables (multiple databases, comma-separated):
+
+```json
+{
+  "mcpServers": {
+    "database": {
+      "command": "db-mcp-server",
+      "env": {
+        "MCP_DATABASE": "app=sqlite:app.db?writable=true,analytics=postgres://user:pass@localhost/analytics,logs=mysql://user:pass@localhost/logs"
       }
     }
   }
@@ -166,102 +225,19 @@ Or using environment variables:
 | `MCP_HTTP_PORT` | HTTP bind port | 8080 |
 | `MCP_LOG_LEVEL` | Log level (trace/debug/info/warn/error) | info |
 
-## Architecture
-
-### Connection Management
-
-- **ConnectionManager**: Central registry for all database connections
-- **DbPool**: Database-specific pool enum (MySqlPool, PgPool, SqlitePool)
-- **Two connection modes**:
-  - **Direct database**: Single pool for specific database
-  - **Server-level**: Lazy per-database pool creation for server-level connections
-
-### Transaction Management
-
-- **Per-transaction locking**: Each transaction uses `Arc<Mutex<TxEntry>>` instead of global locking
-- **Automatic cleanup**: Expired transactions cleaned up every 5 seconds
-- **Timeout management**: Default 60s, max 300s
-- **Panic-safe**: `PoolGuard` ensures cleanup even on panic
-
-### Security Features
-
-- **Read-only by default**: Connections require `?writable=true` for write operations
-- **SQL injection protection**: Parameterized queries with type-safe binding
-- **Dangerous operation guard**: AST-based detection prevents:
-  - DROP DATABASE/TABLE/INDEX
-  - ALTER TABLE DROP COLUMN
-  - TRUNCATE
-  - DELETE/UPDATE without WHERE clause
-- **SQL validation**: AST parsing ensures only SELECT in read-only queries
-
 ## Development
 
-### Build Commands
-
 ```bash
-# Build release version
+# Build from source
 cargo build --release
 
-# Run all tests
+# Run tests
 cargo test
-
-# Run specific test
-cargo test test_query_server_level
-
-# Run with MySQL (requires local server)
-TEST_MYSQL_URL="mysql://root:root@localhost:3306?writable=true" cargo test
-
-# Lint with clippy
-cargo clippy -- -D warnings
-
-# Format code
-cargo fmt
-
-# Check formatting
-cargo fmt -- --check
 ```
-
-### Testing
-
-**Test Organization**
-- Unit tests: Inline in source files
-- Integration tests: `tests/` directory
-- Guard tests: `tests/dangerous_guard_test.rs`
-- Transaction tests: `tests/transaction_test.rs`
-- Fuzz tests: `tests/fuzz_test.rs`, `tests/fuzz_with_db_test.rs`
-
-**Running Database-Specific Tests**
-
-MySQL and PostgreSQL tests require environment variables:
-
-```bash
-# MySQL tests
-TEST_MYSQL_URL="mysql://root:password@localhost:3306?writable=true" cargo test
-
-# PostgreSQL tests
-TEST_POSTGRES_URL="postgres://user:pass@localhost:5432?writable=true" cargo test
-```
-
-SQLite tests use temporary databases via `tempfile` crate.
-
-### Code Style
-
-- **Rustfmt**: Edition 2024, max width 100, tab spaces 4
-- **Clippy**: MSRV 1.85.0, cognitive complexity ≤ 25
-- **Error handling**: All errors use `thiserror` with actionable messages
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Make sure to:
-- Run `cargo fmt` before committing
-- Pass all tests with `cargo test`
-- Pass clippy checks with `cargo clippy -- -D warnings`
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
