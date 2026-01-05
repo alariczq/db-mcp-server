@@ -528,28 +528,6 @@ mod sqlite {
 // =============================================================================
 
 /// Normalize a database type name to a more consistent format.
-pub fn normalize_type_name(type_name: &str) -> String {
-    let lower = type_name.to_lowercase();
-
-    match lower.as_str() {
-        "int4" | "integer" | "int" => "integer".to_string(),
-        "int8" | "bigint" | "bigserial" => "bigint".to_string(),
-        "int2" | "smallint" => "smallint".to_string(),
-        "tinyint" | "tiny" => "tinyint".to_string(),
-        "varchar" | "character varying" | "text" | "string" => "text".to_string(),
-        "char" | "character" | "bpchar" => "char".to_string(),
-        "bool" | "boolean" => "boolean".to_string(),
-        "float4" | "real" | "float" => "real".to_string(),
-        "float8" | "double precision" | "double" => "double".to_string(),
-        "bytea" | "blob" | "binary" | "varbinary" => "binary".to_string(),
-        "timestamp" | "timestamptz" | "datetime" => "timestamp".to_string(),
-        "date" => "date".to_string(),
-        "time" | "timetz" => "time".to_string(),
-        "json" | "jsonb" => "json".to_string(),
-        "uuid" => "uuid".to_string(),
-        _ => lower,
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -602,18 +580,6 @@ mod tests {
             categorize_type("jsonb", DatabaseType::PostgreSQL),
             TypeCategory::Json
         );
-    }
-
-    #[test]
-    fn test_normalize_type_name() {
-        assert_eq!(normalize_type_name("INT4"), "integer");
-        assert_eq!(normalize_type_name("INTEGER"), "integer");
-        assert_eq!(normalize_type_name("VARCHAR"), "text");
-        assert_eq!(normalize_type_name("BOOLEAN"), "boolean");
-        assert_eq!(normalize_type_name("FLOAT8"), "double");
-        assert_eq!(normalize_type_name("BYTEA"), "binary");
-        assert_eq!(normalize_type_name("JSONB"), "json");
-        assert_eq!(normalize_type_name("TINYINT"), "tinyint");
     }
 
     #[test]
