@@ -8,29 +8,12 @@ repository = "https://github.com/example/db-mcp-server"
 keywords = ["mcp", "database", "sqlite", "postgresql", "mysql"]
 categories = ["database", "command-line-utilities"]
 
-[features]
-# 默认配置：支持所有数据库，无 TLS（适合本地开发）
-# 节省 ~8MB 内存/体积（移除 rustls）
-default = []
-
-# TLS 支持（生产环境推荐开启）
-# tls-native: 使用系统 TLS 库，体积小（推荐）
-# tls-rustls: 纯 Rust 实现，跨平台一致但体积大
-tls-native = ["sqlx/tls-native-tls"]
-tls-rustls = ["sqlx/tls-rustls"]
-
 [dependencies]
-# MCP Framework - Official Rust SDK
 rmcp = { version = "0.12.0", features = [
-    # "schemars",
     "transport-io",
     "transport-streamable-http-server",
 ] }
-
-# HTTP server (used by rmcp streamable-http)
 axum = "0.8"
-
-# Database access
 sqlx = { version = "0.8", features = [
     "runtime-tokio",
     "postgres",
@@ -40,8 +23,6 @@ sqlx = { version = "0.8", features = [
     "json",
     "chrono",
 ] }
-
-# Async runtime
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
@@ -50,34 +31,20 @@ tokio = { version = "1", features = [
     "signal",
     "net",
 ] }
-
-# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-# Error handling and logging
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-
-# CLI argument parsing
 clap = { version = "4", features = ["derive", "env"] }
-
-# URL parsing
 url = "2"
-
-# Utilities
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 humansize = "2"
-
-# JSON Schema generation for MCP tools
 schemars = { version = "1.0", features = ["derive"] }
 futures-util = "0.3.31"
 unicode-width = "0.2.2"
-
-# SQL parsing for read-only validation
 sqlparser = "0.60"
 
 [dev-dependencies]
