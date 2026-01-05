@@ -51,32 +51,32 @@ db-mcp-server --database mysql://user:pass@localhost/mydb?writable=true
 
 ### Multiple Databases
 
-你可以通过以下三种方式配置多个数据库：
+Configure multiple databases using one of these methods:
 
-**方式 1：命令行重复 `-d` 参数**
+**Method 1: Command Line (repeat `-d` flag)**
 
 ```bash
-# 使用默认 ID（从数据库名自动推导）
+# Use auto-generated IDs (derived from database name)
 db-mcp-server -d sqlite:one.db -d postgres://localhost/two
 
-# 使用自定义 ID（推荐）
+# Use custom IDs (recommended)
 db-mcp-server -d app=sqlite:app.db?writable=true -d analytics=postgres://user:pass@localhost/analytics
 
-# 混合使用
+# Mix multiple databases
 db-mcp-server \
   -d main=sqlite:main.db?writable=true \
   -d reports=mysql://user:pass@localhost/reports \
   -d logs=postgres://user:pass@localhost/logs?writable=true
 ```
 
-**方式 2：环境变量（逗号分隔）**
+**Method 2: Environment Variable (comma-separated)**
 
 ```bash
-# 单个数据库
+# Single database
 export MCP_DATABASE="sqlite:data.db?writable=true"
 db-mcp-server
 
-# 多个数据库
+# Multiple databases
 export MCP_DATABASE="\
 app=sqlite:app.db?writable=true,\
 analytics=postgres://user:pass@localhost/analytics,\
@@ -84,9 +84,9 @@ logs=mysql://user:pass@localhost/logs?writable=true"
 db-mcp-server
 ```
 
-**方式 3：Claude Desktop 配置**
+**Method 3: Claude Desktop Configuration**
 
-见下方 [Claude Desktop Configuration](#claude-desktop-configuration) 部分。
+See [Claude Desktop Configuration](#claude-desktop-configuration) section below.
 
 ### Connection String Format
 
@@ -105,7 +105,7 @@ mysql://user:pass@host:port/database
 mysql://user:pass@host:3306                       # server-level
 mysql://user:pass@host/database?writable=true
 
-# 命名连接（多数据库时推荐）
+# Named connections (recommended for multiple databases)
 id=<connection_string>
 app=sqlite:app.db?writable=true
 analytics=postgres://user:pass@localhost/analytics
