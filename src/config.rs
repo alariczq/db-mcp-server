@@ -184,6 +184,17 @@ impl DatabaseConfig {
             None => (None, s),
         };
 
+        // Validate that "default" is not used as explicit connection ID
+        if let Some(name) = explicit_name {
+            if name.trim().eq_ignore_ascii_case("default") {
+                return Err(
+                    "Connection ID 'default' is reserved and cannot be used explicitly. \
+                    Please choose a different ID or omit the ID to use the database name."
+                        .to_string(),
+                );
+            }
+        }
+
         let mut url = Url::parse(url_str).map_err(|e| format!("Invalid URL: {e}"))?;
         let mut opts = Self::extract_options(&mut url, Self::POOL_OPTION_KEYS);
 
@@ -653,6 +664,32 @@ mod tests {
     fn test_connection_id_default_when_no_database() {
         let config = DatabaseConfig::parse("mysql://host:3306").unwrap();
         assert_eq!(config.id, "default");
+    }
+
+    #[test]
+    fn test_reserved_connection_id_default_rejected() {
+        let result = DatabaseConfig::parse("default=mysql://host:3306/mydb");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("reserved"));
+        assert!(err.contains("default"));
+    }
+
+    #[test]
+    fn test_reserved_connection_id_default_case_insensitive() {
+        let test_cases = vec!["DEFAULT", "Default", "DeFaUlT"];
+        for case in test_cases {
+            let result = DatabaseConfig::parse(&format!("{}=mysql://host/db", case));
+            assert!(result.is_err(), "Should reject '{}'", case);
+            assert!(result.unwrap_err().contains("reserved"));
+        }
+    }
+
+    #[test]
+    fn test_reserved_connection_id_default_with_whitespace() {
+        let result = DatabaseConfig::parse(" default =mysql://host/db");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("reserved"));
     }
 
     // =========================================================================
