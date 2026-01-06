@@ -124,7 +124,7 @@ db-mcp-server --transport http --database sqlite:data.db --http-host 0.0.0.0 --h
 
 ### Authentication (HTTP Mode)
 
-HTTP transport supports Bearer token authentication per MCP specification (2025-03-26). STDIO transport does not require authentication as it relies on OS-level process isolation.
+HTTP transport supports Bearer token authentication. STDIO transport does not require authentication as it relies on OS-level process isolation.
 
 **Enable authentication:**
 
@@ -149,10 +149,6 @@ Include the token in the `Authorization` header:
 Authorization: Bearer my-secret-token
 ```
 
-**OAuth 2.1 metadata endpoint:**
-
-When authentication is enabled, the server exposes `/.well-known/oauth-authorization-server` for OAuth 2.1 client discovery (RFC 8414).
-
 ## MCP Tools
 
 ### Read-Only Tools
@@ -167,7 +163,7 @@ When authentication is enabled, the server exposes `/.well-known/oauth-authoriza
 | `explain` | Show query execution plan without executing |
 | `list_transactions` | List all active transactions with duration |
 
-### Write Tools (require `read_only: false`)
+### Write Tools (require `?writable=true` in connection string)
 
 | Tool | Description |
 |------|-------------|
