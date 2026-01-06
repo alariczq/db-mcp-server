@@ -10,6 +10,7 @@ A Rust-based [MCP](https://modelcontextprotocol.io/) server that enables AI assi
 - **Two transport modes**:
   - stdio for CLI integration (Claude Desktop, etc.)
   - HTTP with Server-Sent Events for web clients
+- **HTTP authentication**: Bearer token authentication for HTTP transport (MCP 2025-03-26 spec)
 - **Parameterized queries**: Built-in SQL injection protection
 - **Server-level connections**: Connect to database server without selecting a database
 - **Dangerous operation guard**: AST-based protection against DROP, TRUNCATE, and unqualified DELETE/UPDATE
@@ -120,6 +121,37 @@ db-mcp-server --transport http --database sqlite:data.db
 # HTTP mode with custom host/port
 db-mcp-server --transport http --database sqlite:data.db --http-host 0.0.0.0 --http-port 3000
 ```
+
+### Authentication (HTTP Mode)
+
+HTTP transport supports Bearer token authentication per MCP specification (2025-03-26). STDIO transport does not require authentication as it relies on OS-level process isolation.
+
+**Enable authentication:**
+
+```bash
+# Single token via CLI
+db-mcp-server --transport http --database sqlite:data.db --auth-token my-secret-token
+
+# Multiple tokens via CLI
+db-mcp-server --transport http --database sqlite:data.db \
+  --auth-token token1 --auth-token token2
+
+# Via environment variable (comma-separated)
+export MCP_AUTH_TOKENS="token1,token2,token3"
+db-mcp-server --transport http --database sqlite:data.db
+```
+
+**Client usage:**
+
+Include the token in the `Authorization` header:
+
+```
+Authorization: Bearer my-secret-token
+```
+
+**OAuth 2.1 metadata endpoint:**
+
+When authentication is enabled, the server exposes `/.well-known/oauth-authorization-server` for OAuth 2.1 client discovery (RFC 8414).
 
 ## MCP Tools
 
@@ -250,6 +282,7 @@ Or using environment variables:
 | `MCP_TRANSPORT` | Transport mode (stdio/http) | stdio |
 | `MCP_HTTP_HOST` | HTTP bind host | 127.0.0.1 |
 | `MCP_HTTP_PORT` | HTTP bind port | 8080 |
+| `MCP_AUTH_TOKENS` | Comma-separated auth tokens (HTTP only) | - |
 | `MCP_LOG_LEVEL` | Log level (trace/debug/info/warn/error) | info |
 
 ## Development

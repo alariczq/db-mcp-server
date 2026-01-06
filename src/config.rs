@@ -387,6 +387,17 @@ pub struct Config {
     /// Enable logging output (disabled by default to avoid interfering with stdio transport)
     #[arg(long, env = "MCP_ENABLE_LOGS")]
     pub enable_logs: bool,
+
+    /// Authentication tokens for HTTP transport.
+    /// Can be specified multiple times or as comma-separated values.
+    /// When set, all HTTP requests must include a valid Bearer token.
+    #[arg(
+        long = "auth-token",
+        value_name = "TOKEN",
+        env = "MCP_AUTH_TOKENS",
+        value_delimiter = ','
+    )]
+    pub auth_tokens: Vec<String>,
 }
 
 impl Config {
@@ -409,6 +420,7 @@ impl Config {
             log_level: "info".to_string(),
             json_logs: false,
             enable_logs: false,
+            auth_tokens: Vec::new(),
         }
     }
 

@@ -175,7 +175,10 @@ impl QueryToolHandler {
     /// Write operations are rejected with clear error messages.
     pub async fn query(&self, input: QueryInput) -> DbResult<QueryOutput> {
         // Get database type for dialect-specific SQL parsing
-        let config = self.connection_manager.get_config(&input.connection_id).await?;
+        let config = self
+            .connection_manager
+            .get_config(&input.connection_id)
+            .await?;
         sql_validator::validate_readonly(&input.sql, config.db_type)?;
 
         let format = input.format;

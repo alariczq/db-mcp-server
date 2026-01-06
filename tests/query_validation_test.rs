@@ -27,7 +27,10 @@ fn test_query_rejects_insert() {
 /// Test that UPDATE is rejected with Permission error.
 #[test]
 fn test_query_rejects_update() {
-    let result = validate_readonly("UPDATE users SET name = 'changed' WHERE id = 1", TEST_DB_TYPE);
+    let result = validate_readonly(
+        "UPDATE users SET name = 'changed' WHERE id = 1",
+        TEST_DB_TYPE,
+    );
     assert!(result.is_err(), "UPDATE should be rejected");
 
     let err = result.unwrap_err();
@@ -109,7 +112,10 @@ fn test_query_allows_explain_select() {
 /// Test that EXPLAIN INSERT is rejected.
 #[test]
 fn test_query_rejects_explain_insert() {
-    let result = validate_readonly("EXPLAIN INSERT INTO users (name) VALUES ('test')", TEST_DB_TYPE);
+    let result = validate_readonly(
+        "EXPLAIN INSERT INTO users (name) VALUES ('test')",
+        TEST_DB_TYPE,
+    );
     assert!(result.is_err(), "EXPLAIN INSERT should be rejected");
 }
 

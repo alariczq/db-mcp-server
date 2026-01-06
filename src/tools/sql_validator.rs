@@ -266,7 +266,6 @@ fn classify_statement(stmt: &Statement) -> (SqlStatementType, &'static str) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

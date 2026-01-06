@@ -46,6 +46,8 @@ schemars = { version = "1.0", features = ["derive"] }
 futures-util = "0.3.31"
 unicode-width = "0.2.2"
 sqlparser = "0.60"
+subtle = "2.6"
+tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

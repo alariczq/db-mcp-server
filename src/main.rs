@@ -4,6 +4,7 @@
 //! to interact with SQL databases (SQLite, PostgreSQL, MySQL).
 
 use clap::Parser;
+use db_mcp_server::auth::AuthConfig;
 use db_mcp_server::config::{Config, TransportMode};
 use db_mcp_server::db::{ConnectionManager, TransactionRegistry};
 use db_mcp_server::models::{ConnectionConfig, DatabaseType};
@@ -121,6 +122,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 endpoint = %config.mcp_endpoint,
                 "Using HTTP transport"
             );
+
+            // Build AuthConfig from CLI/env tokens
+            let auth_config = AuthConfig::from_tokens(config.auth_tokens.clone()).map_err(|e| {
+                eprintln!("Error: Invalid authentication configuration: {}", e);
+                std::process::exit(1);
+            })?;
+
             let transport = HttpTransport::with_config(
                 connection_manager,
                 transaction_registry,
@@ -129,6 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &config.mcp_endpoint,
                 config.query_timeout,
                 100, // Default row limit
+                auth_config,
             );
             transport.run().await
         }

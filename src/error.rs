@@ -58,6 +58,12 @@ pub enum DbError {
         "Database parameter required for server-level connection '{connection_id}'. Specify the 'database' parameter to target a specific database."
     )]
     DatabaseRequired { connection_id: String },
+
+    #[error("Unauthorized: {message}")]
+    Unauthorized { message: String, suggestion: String },
+
+    #[error("Invalid authorization header: {message}")]
+    InvalidAuthHeader { message: String, suggestion: String },
 }
 
 impl DbError {
@@ -161,11 +167,29 @@ impl DbError {
         }
     }
 
+    /// Create an unauthorized error.
+    pub fn unauthorized(message: impl Into<String>, suggestion: impl Into<String>) -> Self {
+        Self::Unauthorized {
+            message: message.into(),
+            suggestion: suggestion.into(),
+        }
+    }
+
+    /// Create an invalid auth header error.
+    pub fn invalid_auth_header(message: impl Into<String>, suggestion: impl Into<String>) -> Self {
+        Self::InvalidAuthHeader {
+            message: message.into(),
+            suggestion: suggestion.into(),
+        }
+    }
+
     /// Get the suggestion for this error, if available.
     pub fn suggestion(&self) -> Option<&str> {
         match self {
             Self::Connection { suggestion, .. } => Some(suggestion),
             Self::Database { suggestion, .. } => Some(suggestion),
+            Self::Unauthorized { suggestion, .. } => Some(suggestion),
+            Self::InvalidAuthHeader { suggestion, .. } => Some(suggestion),
             _ => None,
         }
     }
@@ -314,6 +338,14 @@ impl From<DbError> for rmcp::ErrorData {
             // Internal -> internal_error
             DbError::Internal { .. } => {
                 rmcp::ErrorData::internal_error(err.to_string(), suggestion_data(err.suggestion()))
+            }
+
+            // Authentication errors -> invalid_params (closest to 401 semantics in JSON-RPC)
+            DbError::Unauthorized { suggestion, .. } => {
+                rmcp::ErrorData::invalid_params(err.to_string(), suggestion_data(Some(suggestion)))
+            }
+            DbError::InvalidAuthHeader { suggestion, .. } => {
+                rmcp::ErrorData::invalid_params(err.to_string(), suggestion_data(Some(suggestion)))
             }
         }
     }

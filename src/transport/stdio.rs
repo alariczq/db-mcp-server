@@ -2,6 +2,12 @@
 //!
 //! This transport uses standard input/output for communication,
 //! which is the standard mode for CLI-based MCP integrations.
+//!
+//! # Authentication
+//!
+//! Per MCP specification, STDIO transport does NOT use HTTP authentication.
+//! Security is provided by the operating system's process isolation.
+//! The parent process (CLI tool, desktop app) is responsible for authentication.
 
 use crate::db::{ConnectionManager, TransactionRegistry};
 use crate::error::DbResult;

@@ -3,6 +3,7 @@
 //! This library provides MCP (Model Context Protocol) tools for AI assistants
 //! to interact with SQL databases (SQLite, PostgreSQL, MySQL).
 
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;

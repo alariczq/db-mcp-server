@@ -3,10 +3,13 @@
 //! This transport uses HTTP with SSE streaming responses,
 //! which is suitable for web-based MCP integrations.
 
+use crate::auth::{AuthConfig, auth_middleware};
 use crate::db::{ConnectionManager, TransactionRegistry};
 use crate::error::DbResult;
 use crate::mcp::DbService;
 use crate::transport::Transport;
+use axum::middleware;
+use tower::util::option_layer;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -27,6 +30,7 @@ const DEFAULT_ROW_LIMIT: u32 = 100;
 /// - HTTP endpoints for MCP protocol messages
 /// - Server-Sent Events for streaming responses
 /// - Session management for stateful connections
+/// - Optional Bearer token authentication
 pub struct HttpTransport {
     connection_manager: Arc<ConnectionManager>,
     transaction_registry: Arc<TransactionRegistry>,
@@ -35,6 +39,7 @@ pub struct HttpTransport {
     endpoint: String,
     query_timeout_secs: u64,
     row_limit: u32,
+    auth_config: Arc<AuthConfig>,
 }
 
 impl HttpTransport {
@@ -62,10 +67,12 @@ impl HttpTransport {
             endpoint: endpoint.into(),
             query_timeout_secs: DEFAULT_QUERY_TIMEOUT_SECS,
             row_limit: DEFAULT_ROW_LIMIT,
+            auth_config: Arc::new(AuthConfig::default()),
         }
     }
 
     /// Create a new HTTP transport with custom configuration.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_config(
         connection_manager: Arc<ConnectionManager>,
         transaction_registry: Arc<TransactionRegistry>,
@@ -74,6 +81,7 @@ impl HttpTransport {
         endpoint: impl Into<String>,
         query_timeout_secs: u64,
         row_limit: u32,
+        auth_config: AuthConfig,
     ) -> Self {
         Self {
             connection_manager,
@@ -83,6 +91,7 @@ impl HttpTransport {
             endpoint: endpoint.into(),
             query_timeout_secs,
             row_limit,
+            auth_config: Arc::new(auth_config),
         }
     }
 
@@ -120,12 +129,21 @@ impl Transport for HttpTransport {
             Default::default(),
         );
 
+        let auth_layer = self.auth_config.is_enabled().then(|| {
+            info!(
+                token_count = self.auth_config.token_count(),
+                "Authentication enabled for HTTP transport"
+            );
+            middleware::from_fn_with_state(self.auth_config.clone(), auth_middleware)
+        });
+
         // nest_service doesn't support root path "/", use fallback_service instead
         let app = if self.endpoint == "/" {
             axum::Router::new().fallback_service(service)
         } else {
             axum::Router::new().nest_service(&self.endpoint, service)
-        };
+        }
+        .layer(option_layer(auth_layer));
 
         let listener = TcpListener::bind(&bind_addr).await.map_err(|e| {
             crate::error::DbError::connection(
