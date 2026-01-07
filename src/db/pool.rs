@@ -31,6 +31,15 @@ pub struct ConnectionSummary {
     /// Database name from connection URL. Only present when a specific database is targeted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database: Option<String>,
+    /// Host name or IP address. Not present for SQLite.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// Port number. Not present for SQLite or when using default port.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// Username for authentication. Not present for SQLite or anonymous connections.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
 }
 
 /// Database-specific connection pool (avoids AnyPool limitations).
@@ -388,6 +397,9 @@ impl ConnectionManager {
                 writable: entry.config.writable,
                 server_level: entry.config.server_level,
                 database: entry.config.database.clone(),
+                host: entry.config.host.clone(),
+                port: entry.config.port,
+                user: entry.config.user.clone(),
             })
             .collect()
     }

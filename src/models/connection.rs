@@ -5,6 +5,7 @@
 use crate::config::PoolOptions;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 /// Supported database types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -72,6 +73,12 @@ pub struct ConnectionConfig {
     pub server_level: bool,
     /// Database name extracted from connection URL. None for server-level connections.
     pub database: Option<String>,
+    /// Host extracted from connection URL. None for SQLite.
+    pub host: Option<String>,
+    /// Port extracted from connection URL. None for SQLite or when using default port.
+    pub port: Option<u16>,
+    /// Username extracted from connection URL. None for SQLite or anonymous connections.
+    pub user: Option<String>,
     /// Connection pool configuration options.
     #[serde(default)]
     pub pool_options: PoolOptions,
@@ -105,6 +112,13 @@ impl ConnectionConfig {
         let db_type = DatabaseType::from_connection_string(&connection_string)
             .ok_or_else(|| ConnectionConfigError::UnknownDatabaseType(connection_string.clone()))?;
 
+        // Parse host, port, user from connection URL (not applicable for SQLite)
+        let (host, port, user) = if db_type == DatabaseType::SQLite {
+            (None, None, None)
+        } else {
+            Self::parse_url_components(&connection_string)
+        };
+
         Ok(Self {
             id,
             db_type,
@@ -112,8 +126,27 @@ impl ConnectionConfig {
             writable,
             server_level,
             database,
+            host,
+            port,
+            user,
             pool_options,
         })
+    }
+
+    fn parse_url_components(connection_string: &str) -> (Option<String>, Option<u16>, Option<String>) {
+        let Ok(url) = Url::parse(connection_string) else {
+            return (None, None, None);
+        };
+
+        let host = url.host_str().map(|s| s.to_string());
+        let port = url.port();
+        let user = if url.username().is_empty() {
+            None
+        } else {
+            Some(url.username().to_string())
+        };
+
+        (host, port, user)
     }
 
     /// Get a display-safe version of the connection string (credentials masked).

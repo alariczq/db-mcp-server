@@ -7,7 +7,7 @@ use clap::Parser;
 use db_mcp_server::auth::AuthConfig;
 use db_mcp_server::config::{Config, TransportMode};
 use db_mcp_server::db::{ConnectionManager, TransactionRegistry};
-use db_mcp_server::models::{ConnectionConfig, DatabaseType};
+use db_mcp_server::models::ConnectionConfig;
 use db_mcp_server::transport::{HttpTransport, StdioTransport, Transport};
 use std::sync::Arc;
 use tracing::{error, info};
@@ -88,18 +88,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Connecting to database"
         );
 
-        let db_type = DatabaseType::from_connection_string(&db_config.connection_string)
-            .ok_or_else(|| format!("Unknown database type for connection: {}", db_config.id))?;
-
-        let conn_config = ConnectionConfig {
-            id: db_config.id.clone(),
-            db_type,
-            connection_string: db_config.connection_string.clone(),
-            writable: db_config.writable,
-            server_level: db_config.server_level,
-            database: db_config.database.clone(),
-            pool_options: db_config.pool_options.clone(),
-        };
+        let conn_config = ConnectionConfig::new(
+            &db_config.id,
+            &db_config.connection_string,
+            db_config.writable,
+            db_config.server_level,
+            db_config.database.clone(),
+            db_config.pool_options.clone(),
+        )?;
 
         connection_manager.connect(conn_config).await?;
     }
