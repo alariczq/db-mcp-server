@@ -187,6 +187,22 @@ fn process_rows<R: RowToJson>(
 }
 
 // =============================================================================
+// Common Helper Functions
+// =============================================================================
+
+fn collect_rows<R>(results: Vec<Result<R, sqlx::Error>>) -> DbResult<Vec<R>> {
+    let mut rows = Vec::with_capacity(results.len());
+    for result in results {
+        rows.push(result.map_err(DbError::from)?);
+    }
+    Ok(rows)
+}
+
+fn timeout_error(operation: &str, timeout: Duration) -> DbError {
+    DbError::timeout(operation, timeout.as_secs() as u32)
+}
+
+// =============================================================================
 // Database-Specific Implementations
 // =============================================================================
 //
@@ -221,17 +237,8 @@ mod mysql {
         };
 
         match timeout(query_timeout, rows_future).await {
-            Ok(results) => {
-                let mut rows = Vec::with_capacity(results.len());
-                for result in results {
-                    rows.push(result.map_err(DbError::from)?);
-                }
-                Ok(rows)
-            }
-            Err(_) => Err(DbError::timeout(
-                "query execution",
-                query_timeout.as_secs() as u32,
-            )),
+            Ok(results) => collect_rows(results),
+            Err(_) => Err(timeout_error("query execution", query_timeout)),
         }
     }
 
@@ -257,10 +264,7 @@ mod mysql {
         match result {
             Ok(Ok(r)) => Ok(r.rows_affected()),
             Ok(Err(e)) => Err(DbError::from(e)),
-            Err(_) => Err(DbError::timeout(
-                "write operation",
-                query_timeout.as_secs() as u32,
-            )),
+            Err(_) => Err(timeout_error("write operation", query_timeout)),
         }
     }
 
@@ -291,7 +295,6 @@ mod postgres {
         row_limit: u32,
         query_timeout: Duration,
     ) -> DbResult<Vec<PgRow>> {
-        // When params is empty, use raw SQL to avoid prepared statement issues
         let fetch_limit = row_limit as usize + 1;
         let rows_future = if params.is_empty() {
             use sqlx::Executor;
@@ -307,17 +310,8 @@ mod postgres {
         };
 
         match timeout(query_timeout, rows_future).await {
-            Ok(results) => {
-                let mut rows = Vec::with_capacity(results.len());
-                for result in results {
-                    rows.push(result.map_err(DbError::from)?);
-                }
-                Ok(rows)
-            }
-            Err(_) => Err(DbError::timeout(
-                "query execution",
-                query_timeout.as_secs() as u32,
-            )),
+            Ok(results) => collect_rows(results),
+            Err(_) => Err(timeout_error("query execution", query_timeout)),
         }
     }
 
@@ -327,7 +321,6 @@ mod postgres {
         params: &[QueryParam],
         query_timeout: Duration,
     ) -> DbResult<u64> {
-        // When params is empty, execute raw SQL directly to avoid prepared statement issues
         let result = if params.is_empty() {
             use sqlx::Executor;
             timeout(query_timeout, pool.execute(sql)).await
@@ -342,10 +335,7 @@ mod postgres {
         match result {
             Ok(Ok(r)) => Ok(r.rows_affected()),
             Ok(Err(e)) => Err(DbError::from(e)),
-            Err(_) => Err(DbError::timeout(
-                "write operation",
-                query_timeout.as_secs() as u32,
-            )),
+            Err(_) => Err(timeout_error("write operation", query_timeout)),
         }
     }
 
@@ -376,7 +366,6 @@ mod sqlite {
         row_limit: u32,
         query_timeout: Duration,
     ) -> DbResult<Vec<SqliteRow>> {
-        // When params is empty, use raw SQL to avoid prepared statement issues
         let fetch_limit = row_limit as usize + 1;
         let rows_future = if params.is_empty() {
             use sqlx::Executor;
@@ -392,17 +381,8 @@ mod sqlite {
         };
 
         match timeout(query_timeout, rows_future).await {
-            Ok(results) => {
-                let mut rows = Vec::with_capacity(results.len());
-                for result in results {
-                    rows.push(result.map_err(DbError::from)?);
-                }
-                Ok(rows)
-            }
-            Err(_) => Err(DbError::timeout(
-                "query execution",
-                query_timeout.as_secs() as u32,
-            )),
+            Ok(results) => collect_rows(results),
+            Err(_) => Err(timeout_error("query execution", query_timeout)),
         }
     }
 
@@ -412,7 +392,6 @@ mod sqlite {
         params: &[QueryParam],
         query_timeout: Duration,
     ) -> DbResult<u64> {
-        // When params is empty, execute raw SQL directly to avoid prepared statement issues
         let result = if params.is_empty() {
             use sqlx::Executor;
             timeout(query_timeout, pool.execute(sql)).await
@@ -427,10 +406,7 @@ mod sqlite {
         match result {
             Ok(Ok(r)) => Ok(r.rows_affected()),
             Ok(Err(e)) => Err(DbError::from(e)),
-            Err(_) => Err(DbError::timeout(
-                "write operation",
-                query_timeout.as_secs() as u32,
-            )),
+            Err(_) => Err(timeout_error("write operation", query_timeout)),
         }
     }
 

@@ -171,9 +171,16 @@ impl TransactionRegistry {
         let tx = pool.begin().await.map_err(DbError::from)?;
         let transaction_id = generate_transaction_id();
 
+        info!(
+            transaction_id = %transaction_id,
+            connection_id = %connection_id,
+            timeout_secs = timeout_secs,
+            "Transaction started (MySQL)"
+        );
+
         let entry = TxEntry {
             transaction: Some(DbTransaction::MySql(tx)),
-            connection_id: connection_id.clone(),
+            connection_id,
             created_at: Instant::now(),
             timeout_secs,
         };
@@ -182,13 +189,6 @@ impl TransactionRegistry {
             let mut txs = self.transactions.write().await;
             txs.insert(transaction_id.clone(), Arc::new(Mutex::new(entry)));
         }
-
-        info!(
-            transaction_id = %transaction_id,
-            connection_id = %connection_id,
-            timeout_secs = timeout_secs,
-            "Transaction started (MySQL)"
-        );
 
         Ok(transaction_id)
     }
@@ -207,9 +207,16 @@ impl TransactionRegistry {
         let tx = pool.begin().await.map_err(DbError::from)?;
         let transaction_id = generate_transaction_id();
 
+        info!(
+            transaction_id = %transaction_id,
+            connection_id = %connection_id,
+            timeout_secs = timeout_secs,
+            "Transaction started (PostgreSQL)"
+        );
+
         let entry = TxEntry {
             transaction: Some(DbTransaction::Postgres(tx)),
-            connection_id: connection_id.clone(),
+            connection_id,
             created_at: Instant::now(),
             timeout_secs,
         };
@@ -218,13 +225,6 @@ impl TransactionRegistry {
             let mut txs = self.transactions.write().await;
             txs.insert(transaction_id.clone(), Arc::new(Mutex::new(entry)));
         }
-
-        info!(
-            transaction_id = %transaction_id,
-            connection_id = %connection_id,
-            timeout_secs = timeout_secs,
-            "Transaction started (PostgreSQL)"
-        );
 
         Ok(transaction_id)
     }
@@ -243,9 +243,16 @@ impl TransactionRegistry {
         let tx = pool.begin().await.map_err(DbError::from)?;
         let transaction_id = generate_transaction_id();
 
+        info!(
+            transaction_id = %transaction_id,
+            connection_id = %connection_id,
+            timeout_secs = timeout_secs,
+            "Transaction started (SQLite)"
+        );
+
         let entry = TxEntry {
             transaction: Some(DbTransaction::SQLite(tx)),
-            connection_id: connection_id.clone(),
+            connection_id,
             created_at: Instant::now(),
             timeout_secs,
         };
@@ -254,13 +261,6 @@ impl TransactionRegistry {
             let mut txs = self.transactions.write().await;
             txs.insert(transaction_id.clone(), Arc::new(Mutex::new(entry)));
         }
-
-        info!(
-            transaction_id = %transaction_id,
-            connection_id = %connection_id,
-            timeout_secs = timeout_secs,
-            "Transaction started (SQLite)"
-        );
 
         Ok(transaction_id)
     }
@@ -618,20 +618,22 @@ impl TransactionRegistry {
     /// Clean up expired transactions.
     /// Collects expired IDs, removes from map, then rolls back outside locks.
     async fn cleanup_expired(&self) {
-        // Phase 1: Collect expired transaction info with read lock
-        let expired_entries: Vec<(String, String, Arc<Mutex<TxEntry>>)> = {
+        // Phase 1: Collect Arc references with read lock (don't wait for entry locks)
+        let candidates: Vec<(String, Arc<Mutex<TxEntry>>)> = {
             let txs = self.transactions.read().await;
-            let mut expired = Vec::new();
-
-            for (id, entry_arc) in txs.iter() {
-                let entry = entry_arc.lock().await;
-                if entry.is_expired() && entry.transaction.is_some() {
-                    expired.push((id.clone(), entry.connection_id.clone(), entry_arc.clone()));
-                }
-            }
-
-            expired
+            txs.iter()
+                .map(|(id, entry_arc)| (id.clone(), Arc::clone(entry_arc)))
+                .collect()
         };
+
+        // Phase 1.5: Check expiration outside read lock to reduce lock contention
+        let mut expired_entries = Vec::new();
+        for (id, entry_arc) in candidates {
+            let entry = entry_arc.lock().await;
+            if entry.is_expired() && entry.transaction.is_some() {
+                expired_entries.push((id, entry.connection_id.clone(), Arc::clone(&entry_arc)));
+            }
+        }
 
         if expired_entries.is_empty() {
             return;

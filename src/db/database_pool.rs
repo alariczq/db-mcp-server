@@ -87,14 +87,6 @@ impl DatabaseTarget {
             Some(db) => Ok(DatabaseTarget::Database(db.to_string())),
         }
     }
-
-    /// Get the database name if this is a database target.
-    pub fn database_name(&self) -> Option<&str> {
-        match self {
-            DatabaseTarget::Server => None,
-            DatabaseTarget::Database(name) => Some(name.as_str()),
-        }
-    }
 }
 
 /// Entry for a database-specific connection pool.
@@ -709,33 +701,6 @@ mod tests {
         assert_eq!(entry.active_count(), 1);
         entry.decrement_active();
         assert_eq!(entry.active_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_database_pool_entry_server_target() {
-        let entry = DatabasePoolEntry {
-            pool: DbPool::MySql(sqlx::Pool::connect_lazy("mysql://localhost").unwrap()),
-            target: DatabaseTarget::Server,
-            last_accessed: std::sync::RwLock::new(Instant::now()),
-            created_at: Instant::now(),
-            active_count: AtomicUsize::new(0),
-        };
-
-        assert_eq!(entry.target, DatabaseTarget::Server);
-        assert!(entry.target.database_name().is_none());
-    }
-
-    #[tokio::test]
-    async fn test_database_pool_entry_database_target() {
-        let entry = DatabasePoolEntry {
-            pool: DbPool::MySql(sqlx::Pool::connect_lazy("mysql://localhost").unwrap()),
-            target: DatabaseTarget::Database("mydb".to_string()),
-            last_accessed: std::sync::RwLock::new(Instant::now()),
-            created_at: Instant::now(),
-            active_count: AtomicUsize::new(0),
-        };
-
-        assert_eq!(entry.target.database_name(), Some("mydb"));
     }
 
     #[tokio::test]
