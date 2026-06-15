@@ -182,6 +182,11 @@ impl TransactionToolHandler {
                     .begin_sqlite(p, input.connection_id.clone(), Some(timeout_secs))
                     .await
             }
+            DbPool::ClickHouse(_, _) => {
+                Err(DbError::invalid_input(
+                    "Transactions are not supported for ClickHouse connections. ClickHouse uses a different transaction model based on atomic inserts.",
+                ))
+            }
         };
 
         self.connection_manager

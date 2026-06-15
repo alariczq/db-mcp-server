@@ -78,7 +78,7 @@ impl ExplainToolHandler {
     }
 
     /// SQLite uses EXPLAIN QUERY PLAN for SELECT, EXPLAIN for writes.
-    /// MySQL/PostgreSQL use EXPLAIN directly.
+    /// MySQL/PostgreSQL/ClickHouse use EXPLAIN directly.
     fn generate_explain_sql(pool: &DbPool, sql: &str) -> String {
         match pool {
             DbPool::SQLite(_) => {
@@ -89,7 +89,7 @@ impl ExplainToolHandler {
                     format!("EXPLAIN {}", sql)
                 }
             }
-            DbPool::MySql(_) | DbPool::Postgres(_) => {
+            DbPool::MySql(_) | DbPool::Postgres(_) | DbPool::ClickHouse(_, _) => {
                 format!("EXPLAIN {}", sql)
             }
         }
@@ -280,6 +280,45 @@ impl ExplainToolHandler {
                 match tokio::time::timeout(timeout, rows_future).await {
                     Ok(Ok(rows)) => Ok(rows.iter().map(|r| r.to_json_map()).collect()),
                     Ok(Err(e)) => Err(DbError::from(e)),
+                    Err(_) => Err(DbError::timeout("EXPLAIN", timeout.as_secs() as u32)),
+                }
+            }
+            DbPool::ClickHouse(c, _) => {
+                let json_sql = format!("{} FORMAT JSON", explain_sql);
+                let mut query = c.query(&json_sql);
+                for param in params {
+                    query = match param {
+                        QueryParam::Null => query.bind(()),
+                        QueryParam::Bool(v) => query.bind(*v),
+                        QueryParam::Int(v) => query.bind(*v),
+                        QueryParam::Float(v) => query.bind(*v),
+                        QueryParam::String(v) => query.bind(v.as_str()),
+                        QueryParam::Json(v) => query.bind(v.to_string()),
+                    };
+                }
+
+                match tokio::time::timeout(timeout, query.fetch_all::<String>()).await {
+                    Ok(Ok(parts)) => {
+                        #[derive(serde::Deserialize)]
+                        struct JsonResult {
+                            data: Vec<serde_json::Map<String, serde_json::Value>>,
+                        }
+                        let json_str = parts.join("");
+                        let json_result: JsonResult = serde_json::from_str(&json_str)
+                            .map_err(|e| {
+                                DbError::database(
+                                    format!("Failed to parse ClickHouse JSON result: {}", e),
+                                    None,
+                                    "Check the SQL syntax and ClickHouse server status",
+                                )
+                            })?;
+                        Ok(json_result.data)
+                    }
+                    Ok(Err(e)) => Err(DbError::database(
+                        format!("ClickHouse EXPLAIN error: {}", e),
+                        None,
+                        "Check the SQL syntax and ClickHouse server status",
+                    )),
                     Err(_) => Err(DbError::timeout("EXPLAIN", timeout.as_secs() as u32)),
                 }
             }

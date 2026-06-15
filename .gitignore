@@ -43,3 +43,4 @@ coverage/
 
 # Cargo lock for libraries (keep for binaries)
 # Cargo.lock
+.trae

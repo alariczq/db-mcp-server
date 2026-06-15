@@ -1,10 +1,10 @@
 # DB MCP Server
 
-A Rust-based [MCP](https://modelcontextprotocol.io/) server that enables AI assistants to interact with SQL databases (SQLite, PostgreSQL, MySQL) safely and efficiently.
+A Rust-based [MCP](https://modelcontextprotocol.io/) server that enables AI assistants to interact with SQL databases (SQLite, PostgreSQL, MySQL, ClickHouse) safely and efficiently.
 
 ## Features
 
-- **Multi-database support**: SQLite, PostgreSQL, MySQL
+- **Multi-database support**: SQLite, PostgreSQL, MySQL, ClickHouse
 - **Read-only by default**: Write operations require explicit `?writable=true` flag
 - **Transaction support**: Full ACID transaction management across multiple MCP calls
 - **Two transport modes**:
@@ -17,6 +17,7 @@ A Rust-based [MCP](https://modelcontextprotocol.io/) server that enables AI assi
 - **Lazy per-database pools**: Efficient connection pooling for server-level connections
 - **Dynamic connection management**: Add, update, or remove database connections at runtime
 - **Output formatting**: JSON, ASCII table, or Markdown table formats
+- **ClickHouse special syntax support**: ANY JOIN, ASOF JOIN, WITH subqueries, and other ClickHouse-specific features
 
 ## Installation
 
@@ -49,6 +50,12 @@ db-mcp-server --database postgres://user:pass@localhost:5432?writable=true
 
 # MySQL with write access
 db-mcp-server --database mysql://user:pass@localhost/mydb?writable=true
+
+# ClickHouse (default database)
+db-mcp-server --database clickhouse://localhost:8123/default
+
+# ClickHouse (writable)
+db-mcp-server --database clickhouse://localhost:8123/default?writable=true
 ```
 
 ### Multiple Databases
@@ -107,10 +114,18 @@ mysql://user:pass@host:port/database
 mysql://user:pass@host:3306                       # server-level
 mysql://user:pass@host/database?writable=true
 
+# ClickHouse
+clickhouse://host:port/database
+clickhouse://localhost:8123/default              # default port
+clickhouse://localhost:8123/default?writable=true
+clickhouse://user@localhost:8123/default          # 仅用户名
+clickhouse://user:password@localhost:8123/default # 用户名 + 密码
+
 # Named connections (recommended for multiple databases)
 id=<connection_string>
 app=sqlite:app.db?writable=true
 analytics=postgres://user:pass@localhost/analytics
+logs=clickhouse://localhost:8123/logs?writable=true
 ```
 
 ### HTTP Mode
@@ -188,6 +203,19 @@ Authorization: Bearer my-secret-token
 - **Transaction workflow**: `begin_transaction` → `query`/`execute` with `transaction_id` → `commit`/`rollback`
 - **Dangerous operation protection**: DROP, TRUNCATE, DELETE/UPDATE without WHERE require `skip_sql_check: true`
 - **Server-level operations**: Use `database` parameter to target specific database for server-level connections
+- **ClickHouse special syntax**: Support for ANY JOIN, ASOF JOIN, WITH subqueries, FINAL, SAMPLE, PREWHERE, LIMIT BY, GLOBAL JOIN, etc.
+
+### Database-Specific Notes
+
+#### ClickHouse
+- **Transaction support**: Not supported (ClickHouse uses MVCC and doesn't support traditional transactions)
+- **Connection**: Uses HTTP protocol (port 8123 by default)
+- **Special syntax supported**:
+  - `ANY JOIN` / `ANY LEFT JOIN`
+  - `ASOF JOIN` / `ASOF LEFT JOIN`
+  - `WITH (SELECT ...) AS name` (subquery as CTE)
+  - `FINAL`, `SAMPLE`, `PREWHERE`, `LIMIT BY`, `GLOBAL JOIN`
+  - ClickHouse-specific functions: `uniq`, `groupArray`, `quantile`, `topK`, `arrayMap`, etc.
 
 ## AI CLI Configuration Examples
 

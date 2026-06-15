@@ -16,6 +16,7 @@ pub enum DatabaseType {
     /// Includes MariaDB
     MySQL,
     SQLite,
+    ClickHouse,
 }
 
 impl DatabaseType {
@@ -28,6 +29,8 @@ impl DatabaseType {
             Some(Self::MySQL)
         } else if lower.starts_with("sqlite://") || lower.starts_with("sqlite:") {
             Some(Self::SQLite)
+        } else if lower.starts_with("clickhouse://") {
+            Some(Self::ClickHouse)
         } else {
             None
         }
@@ -39,6 +42,7 @@ impl DatabaseType {
             Self::PostgreSQL => "PostgreSQL",
             Self::MySQL => "MySQL",
             Self::SQLite => "SQLite",
+            Self::ClickHouse => "ClickHouse",
         }
     }
 
@@ -48,6 +52,7 @@ impl DatabaseType {
             Self::PostgreSQL => Some(5432),
             Self::MySQL => Some(3306),
             Self::SQLite => None,
+            Self::ClickHouse => Some(8123),
         }
     }
 }
@@ -389,6 +394,10 @@ mod tests {
         assert_eq!(
             DatabaseType::from_connection_string("sqlite://path/to/db"),
             Some(DatabaseType::SQLite)
+        );
+        assert_eq!(
+            DatabaseType::from_connection_string("clickhouse://localhost/db"),
+            Some(DatabaseType::ClickHouse)
         );
         assert_eq!(
             DatabaseType::from_connection_string("unknown://localhost"),

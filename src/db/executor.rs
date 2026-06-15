@@ -99,6 +99,12 @@ impl QueryExecutor {
                         .await?;
                 process_rows(rows, row_limit, start, request.decode_binary)
             }
+            DbPool::ClickHouse(p, addr) => {
+                let rows =
+                    clickhouse::fetch_rows(p, addr, &request.sql, &request.params, row_limit, query_timeout)
+                        .await?;
+                process_clickhouse_rows(rows, row_limit, start)
+            }
         }
     }
 
@@ -124,6 +130,7 @@ impl QueryExecutor {
             DbPool::MySql(p) => mysql::execute_write(p, sql, params, query_timeout).await?,
             DbPool::Postgres(p) => postgres::execute_write(p, sql, params, query_timeout).await?,
             DbPool::SQLite(p) => sqlite::execute_write(p, sql, params, query_timeout).await?,
+            DbPool::ClickHouse(p, addr) => clickhouse::execute_write(p, addr, sql, params, query_timeout).await?,
         };
 
         let execution_time_ms = start.elapsed().as_millis() as u64;
@@ -166,6 +173,53 @@ fn process_rows<R: RowToJson>(
         .iter()
         .take(rows_to_take)
         .map(|r| r.to_json_map_with_options(decode_binary))
+        .collect();
+
+    if has_more {
+        warn!(
+            total_rows = total_rows,
+            limit = row_limit,
+            "Query result truncated"
+        );
+    }
+
+    Ok(QueryResult {
+        columns,
+        rows: json_rows,
+        rows_affected: None,
+        execution_time_ms,
+        truncated: Some(has_more),
+        has_more: Some(has_more),
+    })
+}
+
+/// Process ClickHouse rows (already in JSON format) into a QueryResult.
+fn process_clickhouse_rows(
+    rows: Vec<serde_json::Map<String, serde_json::Value>>,
+    row_limit: u32,
+    start: Instant,
+) -> DbResult<QueryResult> {
+    let execution_time_ms = start.elapsed().as_millis() as u64;
+
+    if rows.is_empty() {
+        return Ok(QueryResult {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            rows_affected: None,
+            execution_time_ms,
+            truncated: Some(false),
+            has_more: Some(false),
+        });
+    }
+
+    let columns: Vec<String> = rows[0].keys().cloned().collect();
+    let total_rows = rows.len();
+    let has_more = total_rows > row_limit as usize;
+    let rows_to_take = (row_limit as usize).min(total_rows);
+
+    let json_rows: Vec<serde_json::Map<String, serde_json::Value>> = rows
+        .into_iter()
+        .take(rows_to_take)
         .collect();
 
     if has_more {
@@ -423,6 +477,107 @@ mod sqlite {
             // SQLite doesn't have native JSON type, store as string
             QueryParam::Json(v) => query.bind(v.to_string()),
         }
+    }
+}
+
+mod clickhouse {
+    use super::*;
+    use ::clickhouse::Client;
+    use reqwest::Client as HttpClient;
+    use serde::Deserialize;
+    use std::ops::Deref;
+
+    #[derive(Debug, Deserialize)]
+    struct JsonResult {
+        meta: Vec<serde_json::Map<String, serde_json::Value>>,
+        data: Vec<serde_json::Map<String, serde_json::Value>>,
+    }
+
+    pub async fn fetch_rows(
+        client: &Client,
+        addr: &str,
+        sql: &str,
+        params: &[QueryParam],
+        row_limit: u32,
+        query_timeout: Duration,
+    ) -> DbResult<Vec<serde_json::Map<String, serde_json::Value>>> {
+        let fetch_limit = row_limit as usize + 1;
+        
+        let sql_with_params = substitute_params(sql, params);
+        let json_sql = format!("SELECT * FROM ({}) LIMIT {} FORMAT JSON", sql_with_params, fetch_limit);
+        
+        let http_client = HttpClient::new();
+        let url = format!("http://{}", addr);
+        
+        let response = timeout(query_timeout, http_client.post(&url).body(json_sql).send()).await
+            .map_err(|_| timeout_error("query execution", query_timeout))?
+            .map_err(|e| {
+                DbError::database(
+                    format!("ClickHouse query error: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+
+        let json_str = response.text().await
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to read response body: {}", e),
+                    None,
+                    "Check the ClickHouse server status",
+                )
+            })?;
+        
+        let json_result: JsonResult = serde_json::from_str(&json_str)
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to parse ClickHouse JSON result: {} - {}", e, json_str),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+        Ok(json_result.data)
+    }
+
+    fn substitute_params(sql: &str, params: &[QueryParam]) -> String {
+        let mut result = sql.to_string();
+        for param in params {
+            let value = match param {
+                QueryParam::Null => "NULL".to_string(),
+                QueryParam::Bool(v) => format!("{}", v),
+                QueryParam::Int(v) => format!("{}", v),
+                QueryParam::Float(v) => format!("{}", v),
+                QueryParam::String(v) => format!("'{}'", v.replace("'", "''")),
+                QueryParam::Json(v) => format!("'{}'", v),
+            };
+            result = result.replacen("?", &value, 1);
+        }
+        result
+    }
+
+    pub async fn execute_write(
+        client: &Client,
+        addr: &str,
+        sql: &str,
+        params: &[QueryParam],
+        query_timeout: Duration,
+    ) -> DbResult<u64> {
+        let sql_with_params = substitute_params(sql, params);
+        
+        let http_client = HttpClient::new();
+        let url = format!("http://{}", addr);
+        
+        timeout(query_timeout, http_client.post(&url).body(sql_with_params).send()).await
+            .map_err(|_| timeout_error("write operation", query_timeout))?
+            .map_err(|e| {
+                DbError::database(
+                    format!("ClickHouse write error: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+        
+        Ok(0)
     }
 }
 

@@ -12,7 +12,7 @@
 use crate::error::{DbError, DbResult};
 use crate::models::DatabaseType;
 use sqlparser::ast::Statement;
-use sqlparser::dialect::{Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect};
+use sqlparser::dialect::{ClickHouseDialect, Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect};
 use sqlparser::parser::Parser;
 
 /// Type of SQL statement detected by the validator.
@@ -56,7 +56,60 @@ fn get_dialect(db_type: DatabaseType) -> Box<dyn Dialect> {
         DatabaseType::PostgreSQL => Box::new(PostgreSqlDialect {}),
         DatabaseType::MySQL => Box::new(MySqlDialect {}),
         DatabaseType::SQLite => Box::new(SQLiteDialect {}),
+        DatabaseType::ClickHouse => Box::new(ClickHouseDialect {}),
     }
+}
+
+/// Preprocess ClickHouse-specific SQL syntax to make it parseable by sqlparser.
+///
+/// This function handles ClickHouse-specific syntax that sqlparser doesn't support:
+/// - `ANY JOIN` → `JOIN` (removes ANY keyword)
+/// - `ASOF JOIN` → `JOIN` (removes ASOF keyword)
+/// - `WITH (SELECT ...) AS x` → `WITH x AS (SELECT ...)` (converts to CTE syntax)
+fn preprocess_clickhouse_sql(sql: &str) -> String {
+    let mut result = sql.to_string();
+
+    // Remove ANY keyword from JOIN (case-insensitive)
+    // ClickHouse syntax: ANY LEFT JOIN, ANY RIGHT JOIN, ANY INNER JOIN, ANY JOIN
+    // Pattern: ANY (LEFT|RIGHT|INNER|FULL)? JOIN
+    let any_join_patterns = [
+        (r"(?i)\bANY\s+LEFT\s+JOIN\b", "LEFT JOIN"),
+        (r"(?i)\bANY\s+RIGHT\s+JOIN\b", "RIGHT JOIN"),
+        (r"(?i)\bANY\s+INNER\s+JOIN\b", "INNER JOIN"),
+        (r"(?i)\bANY\s+FULL\s+JOIN\b", "FULL JOIN"),
+        (r"(?i)\bANY\s+JOIN\b", "JOIN"),
+    ];
+
+    for (pattern, replacement) in any_join_patterns {
+        let re = regex::Regex::new(pattern).unwrap();
+        result = re.replace_all(&result, replacement).to_string();
+    }
+
+    // Remove ASOF keyword from JOIN (case-insensitive)
+    // ClickHouse syntax: ASOF LEFT JOIN, ASOF RIGHT JOIN, ASOF JOIN
+    // Pattern: ASOF (LEFT|RIGHT)? JOIN
+    let asof_join_patterns = [
+        (r"(?i)\bASOF\s+LEFT\s+JOIN\b", "LEFT JOIN"),
+        (r"(?i)\bASOF\s+RIGHT\s+JOIN\b", "RIGHT JOIN"),
+        (r"(?i)\bASOF\s+JOIN\b", "JOIN"),
+    ];
+
+    for (pattern, replacement) in asof_join_patterns {
+        let re = regex::Regex::new(pattern).unwrap();
+        result = re.replace_all(&result, replacement).to_string();
+    }
+
+    // Convert WITH (SELECT ...) AS name to WITH name AS (SELECT ...)
+    // Pattern: WITH (SELECT ...) AS name
+    // Note: We need to handle nested parentheses in the subquery
+    let with_subquery_pattern = r"(?i)\bWITH\s*\(\s*(SELECT\s+.+?)\)\s+AS\s+(\w+)";
+    if let Ok(re) = regex::Regex::new(with_subquery_pattern) {
+        result = re
+            .replace_all(&result, "WITH $2 AS ($1)")
+            .to_string();
+    }
+
+    result
 }
 
 /// Validate SQL for read-only execution in the query tool.
@@ -87,7 +140,14 @@ fn get_dialect(db_type: DatabaseType) -> Box<dyn Dialect> {
 pub fn validate_readonly(sql: &str, db_type: DatabaseType) -> DbResult<()> {
     let dialect = get_dialect(db_type);
 
-    let statements = Parser::parse_sql(dialect.as_ref(), sql).map_err(|e| {
+    // Preprocess ClickHouse-specific syntax
+    let processed_sql = if db_type == DatabaseType::ClickHouse {
+        preprocess_clickhouse_sql(sql)
+    } else {
+        sql.to_string()
+    };
+
+    let statements = Parser::parse_sql(dialect.as_ref(), &processed_sql).map_err(|e| {
         DbError::invalid_input(format!("{} Error: {}", error_messages::PARSE_ERROR, e))
     })?;
 

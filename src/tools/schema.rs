@@ -434,6 +434,7 @@ impl SchemaToolHandler {
                 crate::models::DatabaseType::MySQL => Some("information_schema"),
                 crate::models::DatabaseType::PostgreSQL => Some("postgres"),
                 crate::models::DatabaseType::SQLite => None, // SQLite doesn't support list_databases
+                crate::models::DatabaseType::ClickHouse => Some("default"),
             }
         } else {
             None

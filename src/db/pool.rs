@@ -10,6 +10,7 @@ use sqlx::{
     MySqlPool, PgPool, SqlitePool, mysql::MySqlConnectOptions, mysql::MySqlPoolOptions,
     postgres::PgPoolOptions, sqlite::SqliteConnectOptions, sqlite::SqlitePoolOptions,
 };
+use clickhouse::Client;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -52,11 +53,23 @@ pub struct UpdateConnectionResult {
 }
 
 /// Database-specific connection pool (avoids AnyPool limitations).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum DbPool {
     MySql(MySqlPool),
     Postgres(PgPool),
     SQLite(SqlitePool),
+    ClickHouse(Client, String), // (client, address)
+}
+
+impl std::fmt::Debug for DbPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbPool::MySql(pool) => f.debug_tuple("MySql").field(pool).finish(),
+            DbPool::Postgres(pool) => f.debug_tuple("Postgres").field(pool).finish(),
+            DbPool::SQLite(pool) => f.debug_tuple("SQLite").field(pool).finish(),
+            DbPool::ClickHouse(_, _) => f.debug_tuple("ClickHouse").field(&"Client").finish(),
+        }
+    }
 }
 
 impl DbPool {
@@ -66,6 +79,10 @@ impl DbPool {
             DbPool::MySql(pool) => pool.close().await,
             DbPool::Postgres(pool) => pool.close().await,
             DbPool::SQLite(pool) => pool.close().await,
+            DbPool::ClickHouse(_, _) => {
+                // ClickHouse Client uses HTTP connections which are managed automatically
+                // No explicit close needed
+            }
         }
     }
 
@@ -75,6 +92,7 @@ impl DbPool {
             DbPool::MySql(_) => DatabaseType::MySQL,
             DbPool::Postgres(_) => DatabaseType::PostgreSQL,
             DbPool::SQLite(_) => DatabaseType::SQLite,
+            DbPool::ClickHouse(_, _) => DatabaseType::ClickHouse,
         }
     }
 }
@@ -690,6 +708,34 @@ impl ConnectionManager {
                     })?;
                 Ok(DbPool::SQLite(pool))
             }
+            DatabaseType::ClickHouse => {
+                let url = url::Url::parse(&config.connection_string)
+                    .map_err(|e| {
+                        DbError::connection(
+                            format!("Invalid ClickHouse connection string: {}", e),
+                            "Check the connection URL format: clickhouse://user:pass@host:8123/database",
+                        )
+                    })?;
+
+                let http_url = format!("http://{}:{}", url.host_str().unwrap_or("localhost"), url.port_or_known_default().unwrap_or(8123));
+                let mut client = Client::default().with_url(&http_url);
+
+                if !url.username().is_empty() {
+                    client = client.with_user(url.username());
+                }
+                if let Some(password) = url.password() {
+                    client = client.with_password(password);
+                }
+                let addr = format!("{}:{}", url.host_str().unwrap_or("localhost"), url.port_or_known_default().unwrap_or(8123));
+                
+                if let Some(db) = url.path().strip_prefix('/') {
+                    if !db.is_empty() {
+                        client = client.with_database(db);
+                    }
+                }
+
+                Ok(DbPool::ClickHouse(client, addr))
+            }
         }
     }
 
@@ -741,6 +787,18 @@ impl ConnectionManager {
                     }
                 }
             }
+            DbPool::ClickHouse(client, _) => {
+                match client.query("SELECT version()").fetch_one::<String>().await {
+                    Ok(version) => {
+                        debug!(version = %version, "Got server version");
+                        Some(version)
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to get server version");
+                        None
+                    }
+                }
+            }
         }
     }
 
@@ -777,6 +835,9 @@ impl ConnectionManager {
             DatabaseType::SQLite => {
                 "Verify the file path exists and is accessible: sqlite:path/to/db.sqlite"
                     .to_string()
+            }
+            DatabaseType::ClickHouse => {
+                "Verify the connection string format: clickhouse://user:pass@host:8123/database".to_string()
             }
         }
     }

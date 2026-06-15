@@ -39,6 +39,7 @@ impl SchemaInspector {
             DbPool::Postgres(p) => postgres::list_tables(p, schema, include_views).await,
             DbPool::MySql(p) => mysql::list_tables(p, schema, include_views).await,
             DbPool::SQLite(p) => sqlite::list_tables(p, include_views).await,
+            DbPool::ClickHouse(c, addr) => clickhouse::list_tables(c, addr, schema, include_views).await,
         }
     }
 
@@ -52,6 +53,7 @@ impl SchemaInspector {
             DbPool::Postgres(p) => postgres::describe_table(p, table_name, schema).await,
             DbPool::MySql(p) => mysql::describe_table(p, table_name, schema).await,
             DbPool::SQLite(p) => sqlite::describe_table(p, table_name).await,
+            DbPool::ClickHouse(c, addr) => clickhouse::describe_table(c, addr, table_name, schema).await,
         }
     }
 
@@ -64,6 +66,7 @@ impl SchemaInspector {
             DbPool::SQLite(_) => Err(DbError::invalid_input(
                 "SQLite does not support listing databases. SQLite is file-based; each file is a database.",
             )),
+            DbPool::ClickHouse(c, addr) => clickhouse::list_databases(c, addr).await,
         }
     }
 }
@@ -297,6 +300,24 @@ mod queries {
             "#;
 
         pub const TABLE_SIZE: &str = "SELECT SUM(pgsize) as size_bytes FROM dbstat WHERE name = ?";
+    }
+
+    pub mod clickhouse {
+        pub const LIST_DATABASES: &str = "SHOW DATABASES";
+
+        pub const LIST_TABLES_WITH_VIEWS: &str = r#"
+            SELECT name, engine FROM system.tables
+            WHERE database = ? AND (engine IS NOT NULL OR engine = '')
+            ORDER BY name
+            "#;
+
+        pub const LIST_TABLES_NO_VIEWS: &str = r#"
+            SELECT name, engine FROM system.tables
+            WHERE database = ? AND engine IS NOT NULL AND engine != ''
+            ORDER BY name
+            "#;
+
+        pub const DESCRIBE_TABLE: &str = "DESCRIBE TABLE ?.?";
     }
 }
 
@@ -1004,6 +1025,227 @@ mod sqlite {
             .iter()
             .map(|row| row.get("name"))
             .collect()
+    }
+}
+
+mod clickhouse {
+    use super::*;
+    use ::clickhouse::Client;
+    use reqwest::Client as HttpClient;
+    use serde::Deserialize;
+    use std::ops::Deref;
+
+    #[derive(Debug, Deserialize)]
+    struct JsonResult<T> {
+        meta: Vec<serde_json::Map<String, serde_json::Value>>,
+        data: Vec<T>,
+    }
+
+    fn quote_string(s: &str) -> String {
+        format!("'{}'", s.replace("'", "''"))
+    }
+
+    pub async fn list_databases(client: &Client, addr: &str) -> DbResult<Vec<DatabaseInfoRow>> {
+        let http_client = HttpClient::new();
+        let url = format!("http://{}", addr);
+        let query = format!("{} FORMAT JSON", queries::clickhouse::LIST_DATABASES);
+        
+        let response = http_client.post(&url).body(query).send().await
+            .map_err(|e| {
+                DbError::database(
+                    format!("ClickHouse query error: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+        
+        let json_str = response.text().await
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to read response body: {}", e),
+                    None,
+                    "Check the ClickHouse server status",
+                )
+            })?;
+
+        #[derive(Debug, Deserialize)]
+        struct DatabaseRow {
+            name: String,
+        }
+
+        let json_result: JsonResult<DatabaseRow> = serde_json::from_str(&json_str)
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to parse ClickHouse JSON result: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+
+        let databases = json_result.data
+            .into_iter()
+            .map(|row| DatabaseInfoRow {
+                name: row.name,
+                size_bytes: None,
+                owner: None,
+                encoding: None,
+                collation: None,
+            })
+            .collect::<Vec<_>>();
+
+        debug!(count = databases.len(), "Listed ClickHouse databases");
+        Ok(databases)
+    }
+
+    pub async fn list_tables(
+        client: &Client,
+        addr: &str,
+        schema: Option<&str>,
+        include_views: bool,
+    ) -> DbResult<Vec<TableInfo>> {
+        let database = schema.unwrap_or("default");
+        let base_query = if include_views {
+            queries::clickhouse::LIST_TABLES_WITH_VIEWS
+        } else {
+            queries::clickhouse::LIST_TABLES_NO_VIEWS
+        };
+        let query = format!("{} FORMAT JSON", base_query.replace("?", &quote_string(database)));
+
+        let http_client = HttpClient::new();
+        let url = format!("http://{}", addr);
+        
+        let response = http_client.post(&url).body(query).send().await
+            .map_err(|e| {
+                DbError::database(
+                    format!("ClickHouse query error: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+        
+        let json_str = response.text().await
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to read response body: {}", e),
+                    None,
+                    "Check the ClickHouse server status",
+                )
+            })?;
+
+        #[derive(Debug, Deserialize)]
+        struct TableRow {
+            name: String,
+            engine: Option<String>,
+        }
+        let json_result: JsonResult<TableRow> = serde_json::from_str(&json_str)
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to parse ClickHouse JSON result: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+
+        let tables = json_result.data
+            .into_iter()
+            .filter_map(|row| {
+                if row.name.is_empty() {
+                    return None;
+                }
+
+                let engine = row.engine.as_deref();
+                let table_type = if engine.is_none() || engine == Some("") {
+                    TableType::View
+                } else {
+                    TableType::Table
+                };
+
+                let mut table = TableInfo::new(&row.name, table_type).with_schema(database);
+
+                if let Some(e) = engine {
+                    if !e.is_empty() {
+                        table = table.with_engine(e.to_string());
+                    }
+                }
+
+                Some(table)
+            })
+            .collect::<Vec<_>>();
+
+        debug!(count = tables.len(), "Listed ClickHouse tables");
+        Ok(tables)
+    }
+
+    pub async fn describe_table(
+        client: &Client,
+        addr: &str,
+        table_name: &str,
+        schema: Option<&str>,
+    ) -> DbResult<TableSchema> {
+        let database = schema.unwrap_or("default");
+
+        let query = format!("DESCRIBE TABLE `{}`.`{}` FORMAT JSON", database, table_name);
+        
+        let http_client = HttpClient::new();
+        let url = format!("http://{}", addr);
+        
+        let response = http_client.post(&url).body(query).send().await
+            .map_err(|e| {
+                DbError::database(
+                    format!("ClickHouse query error: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+        
+        let json_str = response.text().await
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to read response body: {}", e),
+                    None,
+                    "Check the ClickHouse server status",
+                )
+            })?;
+
+        #[derive(Debug, serde::Deserialize)]
+        struct ColumnRow {
+            name: String,
+            #[serde(rename = "type")]
+            type_name: String,
+            default_type: Option<String>,
+        }
+        let json_result: JsonResult<ColumnRow> = serde_json::from_str(&json_str)
+            .map_err(|e| {
+                DbError::database(
+                    format!("Failed to parse ClickHouse JSON result: {}", e),
+                    None,
+                    "Check the SQL syntax and ClickHouse server status",
+                )
+            })?;
+
+        if json_result.data.is_empty() {
+            return Err(DbError::schema(
+                format!("Table '{}' not found", table_name),
+                table_name.to_string(),
+            ));
+        }
+
+        let columns = json_result.data
+            .into_iter()
+            .map(|row| {
+                let nullable = row.default_type.as_deref() == Some("NULL");
+                ColumnDefinition::new(&row.name, &row.type_name, nullable)
+            })
+            .collect::<Vec<_>>();
+
+        Ok(TableSchema {
+            table_name: table_name.to_string(),
+            schema_name: Some(database.to_string()),
+            columns,
+            primary_key: Vec::new(),
+            foreign_keys: Vec::new(),
+            indexes: Vec::new(),
+        })
     }
 }
 

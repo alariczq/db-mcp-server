@@ -44,6 +44,7 @@ use crate::db::pool::DbPool;
 use crate::error::{DbError, DbResult};
 use crate::models::DatabaseType;
 use sqlx::{mysql::MySqlConnectOptions, mysql::MySqlPoolOptions, postgres::PgPoolOptions};
+use clickhouse::Client;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -393,6 +394,34 @@ impl DatabasePoolManager {
             DatabaseType::SQLite => Err(DbError::invalid_input(
                 "SQLite does not support server-level connections or database pools",
             )),
+            DatabaseType::ClickHouse => {
+                let url = url::Url::parse(&connection_string)
+                    .map_err(|e| {
+                        DbError::connection(
+                            format!("Invalid ClickHouse connection string: {}", e),
+                            "Check the connection URL format",
+                        )
+                    })?;
+
+                let http_url = format!("http://{}:{}", url.host_str().unwrap_or("localhost"), url.port_or_known_default().unwrap_or(8123));
+                let mut client = Client::default().with_url(&http_url);
+
+                if !url.username().is_empty() {
+                    client = client.with_user(url.username());
+                }
+                if let Some(password) = url.password() {
+                    client = client.with_password(password);
+                }
+                let addr = format!("{}:{}", url.host_str().unwrap_or("localhost"), url.port_or_known_default().unwrap_or(8123));
+                
+                if let Some(db) = url.path().strip_prefix('/') {
+                    if !db.is_empty() {
+                        client = client.with_database(db);
+                    }
+                }
+
+                Ok(DbPool::ClickHouse(client, addr))
+            }
         }
     }
 
